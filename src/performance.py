@@ -97,7 +97,7 @@ def calculate_streaks(returns):
     """
     # 将收益转换为二元序列：1表示盈利，-1表示亏损
     binary_returns = np.sign(returns)
-    binary_returns = binary_returns.replace(0, np.nan).fillna(method='ffill')
+    binary_returns = binary_returns.replace(0, np.nan).ffill()
     
     # 识别连续序列
     pos_streaks = []

@@ -10,10 +10,58 @@ import seaborn as sns
 from matplotlib.ticker import FuncFormatter
 from scipy import stats
 import config
+import logging
 
-# 设置中文字体显示
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体
+# 获取logger
+logger = logging.getLogger('visualization')
+
+# 修复中文字体显示问题
+# 移除对特定中文字体的依赖，使用系统默认字体
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False    # 解决保存图像时负号'-'显示为方块的问题
+
+# 定义中英文标题映射，替换中文标题
+title_map = {
+    "市场状态与策略权重动态转换": "Market States and Strategy Weight Transitions",
+    "市场状态分布": "Market State Distribution",
+    "各市场状态下的月均收益": "Monthly Average Returns by Market State",
+    "COVID-19期间市场表现": "Market Performance During COVID-19",
+    "COVID-19期间策略表现对比": "Strategy Performance Comparison During COVID-19",
+    "状态1\n平静上涨": "State 1\nCalm Uptrend",
+    "状态2\n平静整理": "State 2\nCalm Consolidation",
+    "状态3\n轻微压力": "State 3\nMild Pressure",
+    "状态4\n明显压力": "State 4\nSignificant Pressure",
+    "状态5\n恐慌": "State 5\nPanic",
+    "状态6\n恢复": "State 6\nRecovery",
+    "期限结构策略": "Term Structure Strategy",
+    "ETF对冲策略": "ETF Hedge Strategy",
+    "等权组合": "Equal Weight Portfolio",
+    "动态策略选择": "Dynamic Strategy Selection",
+    "策略累积收益对比": "Strategy Cumulative Return Comparison",
+    "VIX指数与市场状态分类": "VIX Index and Market State Classification",
+    "低波动阈值": "Low Volatility Threshold",
+    "高波动阈值": "High Volatility Threshold",
+    "危机期": "Crisis Period",
+    "恢复期": "Recovery Period",
+    "样本内": "In-Sample",
+    "样本外": "Out-of-Sample",
+    "日期": "Date",
+    "累积收益": "Cumulative Return",
+    "策略权重": "Strategy Weight",
+    "月均收益": "Monthly Average Return",
+    "收益分布": "Return Distribution",
+    "日收益率": "Daily Return",
+    "频数": "Frequency",
+    "均值": "Mean",
+    "中位数": "Median",
+    "标准差": "Std Dev",
+    "偏度": "Skewness",
+    "峰度": "Kurtosis"
+}
+
+def translate_title(text):
+    """将中文标题转换为英文"""
+    return title_map.get(text, text)
 
 def plot_strategy_performance(df, strategies, filename=None):
     """绘制策略累积收益曲线
@@ -30,8 +78,9 @@ def plot_strategy_performance(df, strategies, filename=None):
     
     # 计算并绘制累积收益曲线
     for name, col in strategies:
+        eng_name = translate_title(name)
         cum_returns = (1 + df[col]).cumprod()
-        ax.plot(cum_returns.index, cum_returns, label=name, linewidth=2)
+        ax.plot(cum_returns.index, cum_returns, label=eng_name, linewidth=2)
     
     # 格式化横坐标为日期
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
@@ -42,17 +91,17 @@ def plot_strategy_performance(df, strategies, filename=None):
     ax.legend(loc='upper left', fontsize=12)
     
     # 添加标题和标签
-    ax.set_title('策略累积收益对比 (2015-2023)', fontsize=14)
-    ax.set_ylabel('累积收益 (初始资金=1)', fontsize=12)
-    ax.set_xlabel('日期', fontsize=12)
+    ax.set_title('Strategy Cumulative Return Comparison (2015-2023)', fontsize=14)
+    ax.set_ylabel('Cumulative Return (Initial=1)', fontsize=12)
+    ax.set_xlabel('Date', fontsize=12)
     
     # 标记COVID-19时期
     covid_start = pd.Timestamp(config.COVID_START)
     covid_end = pd.Timestamp(config.COVID_END)
     recovery_end = pd.Timestamp(config.COVID_RECOVERY_END)
     
-    ax.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='COVID-19危机期')
-    ax.axvspan(covid_end, recovery_end, color='blue', alpha=0.1, label='恢复期')
+    ax.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='COVID-19 Crisis')
+    ax.axvspan(covid_end, recovery_end, color='blue', alpha=0.1, label='Recovery Period')
     
     plt.tight_layout()
     
@@ -74,21 +123,21 @@ def plot_market_states(df, filename=None):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10), gridspec_kw={'height_ratios': [3, 1]})
     
     # 绘制VIX指数
-    ax1.plot(df.index, df['vix'], 'b-', label='VIX指数', alpha=0.8)
+    ax1.plot(df.index, df['vix'], 'b-', label='VIX Index', alpha=0.8)
     ax1.fill_between(df.index, 0, df['vix'], color='blue', alpha=0.1)
     
     # 添加VIX阈值线
     ax1.axhline(y=config.VIX_LOW_THRESHOLD, color='green', linestyle='--', alpha=0.7, 
-               label=f'低波动阈值 ({config.VIX_LOW_THRESHOLD})')
+               label=f'Low Volatility Threshold ({config.VIX_LOW_THRESHOLD})')
     ax1.axhline(y=config.VIX_MID_THRESHOLD, color='red', linestyle='--', alpha=0.7, 
-               label=f'高波动阈值 ({config.VIX_MID_THRESHOLD})')
+               label=f'High Volatility Threshold ({config.VIX_MID_THRESHOLD})')
     
     # 格式化横坐标为日期
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     ax1.xaxis.set_major_locator(mdates.YearLocator())
     
     # 添加标题和标签
-    ax1.set_title('VIX指数与市场状态分类 (2015-2023)', fontsize=14)
+    ax1.set_title('VIX Index and Market State Classification (2015-2023)', fontsize=14)
     ax1.set_ylabel('VIX', fontsize=12)
     ax1.grid(True, linestyle='--', alpha=0.5)
     ax1.legend(loc='upper right')
@@ -105,8 +154,8 @@ def plot_market_states(df, filename=None):
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax2, orientation='horizontal', pad=0.05)
     cbar.set_ticks(np.arange(1.5, 7))
-    cbar.set_ticklabels(['状态1\n平静上涨', '状态2\n平静整理', '状态3\n轻微压力', 
-                         '状态4\n明显压力', '状态5\n恐慌', '状态6\n恢复'])
+    cbar.set_ticklabels(['State 1\nCalm Uptrend', 'State 2\nCalm Consolidation', 'State 3\nMild Pressure', 
+                         'State 4\nSignificant Pressure', 'State 5\nPanic', 'State 6\nRecovery'])
     
     # 设置y轴不可见
     ax2.yaxis.set_visible(False)
@@ -117,7 +166,7 @@ def plot_market_states(df, filename=None):
     ax2.spines['right'].set_visible(False)
     ax2.spines['left'].set_visible(False)
     
-    ax2.set_xlabel('日期', fontsize=12)
+    ax2.set_xlabel('Date', fontsize=12)
     ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     ax2.xaxis.set_major_locator(mdates.YearLocator())
     
@@ -144,13 +193,23 @@ def plot_state_performance(state_performance_df, filename=None):
     return_cols = [col for col in state_performance_df.columns if 'Return' in col]
     returns_df = state_performance_df[return_cols]
     
+    # 翻译列名
+    translated_columns = {}
+    for col in returns_df.columns:
+        # 提取策略名称部分
+        strategy_name = col.split(' Monthly Return')[0]
+        translated_strategy = translate_title(strategy_name)
+        translated_columns[col] = f"{translated_strategy} Monthly Return(%)"
+    
+    returns_df = returns_df.rename(columns=translated_columns)
+    
     # 绘制月均收益柱状图
     returns_df.plot(kind='bar', ax=ax1)
-    ax1.set_title('各市场状态下的月均收益 (%)', fontsize=12)
-    ax1.set_ylabel('月均收益 (%)', fontsize=12)
-    ax1.set_xlabel('市场状态', fontsize=12)
+    ax1.set_title('Monthly Average Returns by Market State', fontsize=12)
+    ax1.set_ylabel('Monthly Average Return (%)', fontsize=12)
+    ax1.set_xlabel('Market State', fontsize=12)
     ax1.grid(True, linestyle='--', alpha=0.5, axis='y')
-    ax1.legend(title='策略', loc='best')
+    ax1.legend(title='Strategy', loc='best')
     
     # 为柱状图添加数值标签
     for container in ax1.containers:
@@ -158,11 +217,11 @@ def plot_state_performance(state_performance_df, filename=None):
     
     # 绘制市场状态分布饼图
     state_percent = state_performance_df['Percentage(%)'].values
-    state_labels = [f"{idx} ({val:.1f}%)" for idx, val in zip(state_performance_df.index, state_percent)]
+    state_labels = [f"{idx.replace('State ', '')} ({val:.1f}%)" for idx, val in zip(state_performance_df.index, state_percent)]
     
     ax2.pie(state_percent, labels=state_labels, autopct='', startangle=90, 
            colors=plt.cm.viridis(np.linspace(0, 1, len(state_percent))))
-    ax2.set_title('市场状态分布 (2015-2023)', fontsize=12)
+    ax2.set_title('Market State Distribution (2015-2023)', fontsize=12)
     
     plt.tight_layout()
     
@@ -206,11 +265,11 @@ def plot_covid_analysis(covid_df, strategies, filename=None):
     ax1_twin.tick_params(axis='y', colors='b')
     
     # 添加标记区域
-    ax1.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='危机期')
-    ax1.axvspan(covid_end, recovery_end, color='green', alpha=0.2, label='恢复期')
+    ax1.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='Crisis Period')
+    ax1.axvspan(covid_end, recovery_end, color='green', alpha=0.2, label='Recovery Period')
     
     # 设置标题和格式
-    ax1.set_title('COVID-19期间市场表现 (2020.02-2020.05)', fontsize=14)
+    ax1.set_title('Market Performance During COVID-19 (2020.02-2020.05)', fontsize=14)
     ax1.grid(True, linestyle='--', alpha=0.5)
     
     # 合并图例
@@ -224,13 +283,28 @@ def plot_covid_analysis(covid_df, strategies, filename=None):
     
     # 计算累积收益并归一化
     for name, col in strategies:
+        eng_name = translate_title(name)
         # 从1开始的累积收益
         df_extended[f'{name}_cum'] = (1 + df_extended[col]).cumprod()
-        # 归一化到危机开始前
-        start_val = df_extended[f'{name}_cum'].iloc[df_extended.index.get_loc(covid_start, method='ffill') - 1]
-        df_extended[f'{name}_norm'] = df_extended[f'{name}_cum'] / start_val
-        # 绘制线图
-        ax2.plot(df_extended.index, df_extended[f'{name}_norm'], label=name, linewidth=2)
+        
+        # 修复DatetimeIndex.get_loc()的问题
+        # 找到最接近covid_start的索引位置
+        try:
+            # 找到小于covid_start的最近日期
+            idx_before = df_extended.index[df_extended.index < covid_start].max()
+            if idx_before is not pd.NaT:
+                idx_loc = df_extended.index.get_indexer([idx_before])[0]
+                
+                # 获取归一化基准值
+                start_val = df_extended[f'{name}_cum'].iloc[idx_loc]
+                # 归一化到危机开始前
+                df_extended[f'{name}_norm'] = df_extended[f'{name}_cum'] / start_val
+                # 绘制线图
+                ax2.plot(df_extended.index, df_extended[f'{name}_norm'], label=eng_name, linewidth=2)
+            else:
+                logger.warning(f"找不到小于COVID开始日期的数据点，无法归一化 {name}")
+        except Exception as e:
+            logger.error(f"处理COVID数据时出错: {str(e)}")
     
     # 添加标记区域
     ax2.axvspan(covid_start, covid_end, color='red', alpha=0.2)
@@ -241,9 +315,9 @@ def plot_covid_analysis(covid_df, strategies, filename=None):
     ax2.axvline(x=covid_end, color='black', linestyle='--', alpha=0.5)
     
     # 设置标题和格式
-    ax2.set_title('COVID-19期间策略表现对比', fontsize=14)
-    ax2.set_ylabel('归一化累积收益', fontsize=12)
-    ax2.set_xlabel('日期', fontsize=12)
+    ax2.set_title('Strategy Performance Comparison During COVID-19', fontsize=14)
+    ax2.set_ylabel('Normalized Cumulative Return', fontsize=12)
+    ax2.set_xlabel('Date', fontsize=12)
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.legend(loc='lower right')
     
@@ -285,7 +359,7 @@ def plot_weight_transition(df, filename=None):
     ax1.spines['right'].set_visible(False)
     ax1.spines['left'].set_visible(False)
     
-    ax1.set_title('市场状态与策略权重动态转换', fontsize=14)
+    ax1.set_title('Market States and Strategy Weight Transitions', fontsize=14)
     
     # 添加颜色条
     cmap = plt.cm.get_cmap('viridis', 6)
@@ -293,25 +367,28 @@ def plot_weight_transition(df, filename=None):
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax1, orientation='horizontal', pad=0.1)
     cbar.set_ticks(np.arange(1.5, 7))
-    cbar.set_ticklabels(['状态1\n平静上涨', '状态2\n平静整理', '状态3\n轻微压力', 
-                         '状态4\n明显压力', '状态5\n恐慌', '状态6\n恢复'])
+    cbar.set_ticklabels(['State 1\nCalm Uptrend', 'State 2\nCalm Consolidation', 'State 3\nMild Pressure', 
+                         'State 4\nSignificant Pressure', 'State 5\nPanic', 'State 6\nRecovery'])
     
     # 绘制策略权重堆叠区域图
-    ax2.fill_between(df.index, 0, df['ts_weight'], label='期限结构策略', alpha=0.7, color='blue')
-    ax2.fill_between(df.index, df['ts_weight'], 1, label='ETF对冲策略', alpha=0.7, color='green')
+    ts_label = translate_title("期限结构策略")
+    etf_label = translate_title("ETF对冲策略")
+    
+    ax2.fill_between(df.index, 0, df['ts_weight'], label=ts_label, alpha=0.7, color='blue')
+    ax2.fill_between(df.index, df['ts_weight'], 1, label=etf_label, alpha=0.7, color='green')
     
     # 标记COVID-19时期
     covid_start = pd.Timestamp(config.COVID_START)
     covid_end = pd.Timestamp(config.COVID_END)
     recovery_end = pd.Timestamp(config.COVID_RECOVERY_END)
     
-    ax2.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='COVID-19危机期')
-    ax2.axvspan(covid_end, recovery_end, color='blue', alpha=0.1, label='恢复期')
+    ax2.axvspan(covid_start, covid_end, color='red', alpha=0.2, label='COVID-19 Crisis')
+    ax2.axvspan(covid_end, recovery_end, color='blue', alpha=0.1, label='Recovery Period')
     
     # 设置坐标轴
     ax2.set_ylim(0, 1)
-    ax2.set_ylabel('策略权重', fontsize=12)
-    ax2.set_xlabel('日期', fontsize=12)
+    ax2.set_ylabel('Strategy Weight', fontsize=12)
+    ax2.set_xlabel('Date', fontsize=12)
     ax2.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.0%}'))
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.legend(loc='upper right')
@@ -346,6 +423,10 @@ def plot_train_test_comparison(train_df, test_df, filename=None):
     train_data = train_df.loc[metrics]
     test_data = test_df.loc[metrics]
     
+    # 翻译列名
+    train_data = train_data.rename(columns={col: translate_title(col) for col in train_data.columns})
+    test_data = test_data.rename(columns={col: translate_title(col) for col in test_data.columns})
+    
     fig, axs = plt.subplots(len(metrics), 1, figsize=(12, 15))
     
     for i, metric in enumerate(metrics):
@@ -354,20 +435,21 @@ def plot_train_test_comparison(train_df, test_df, filename=None):
         test_values = test_data.loc[metric]
         
         # 如果是最大回撤，需要取负值使得更小的回撤显示为更好的表现
+        metric_display = metric
         if 'Drawdown' in metric:
             train_values = -train_values
             test_values = -test_values
-            metric = metric + ' (负值更好)'
+            metric_display = metric + ' (negative is better)'
         
         # 创建柱状图
         x = np.arange(len(train_values))
         width = 0.35
         
-        axs[i].bar(x - width/2, train_values, width, label='样本内 (2015-2019)', alpha=0.7)
-        axs[i].bar(x + width/2, test_values, width, label='样本外 (2020-2023)', alpha=0.7)
+        axs[i].bar(x - width/2, train_values, width, label='In-Sample (2015-2019)', alpha=0.7)
+        axs[i].bar(x + width/2, test_values, width, label='Out-of-Sample (2020-2023)', alpha=0.7)
         
         # 设置图表格式
-        axs[i].set_title(f'{metric}对比', fontsize=12)
+        axs[i].set_title(f'{metric_display} Comparison', fontsize=12)
         axs[i].set_xticks(x)
         axs[i].set_xticklabels(train_values.index)
         axs[i].grid(True, linestyle='--', alpha=0.5, axis='y')
@@ -412,6 +494,7 @@ def plot_returns_distribution(df, strategies, filename=None):
         axs = [axs]
     
     for i, (name, col) in enumerate(strategies):
+        eng_name = translate_title(name)
         # 提取日收益率
         returns = df[col].dropna() * 100  # 转换为百分比
         
@@ -426,20 +509,20 @@ def plot_returns_distribution(df, strategies, filename=None):
         kurt = stats.kurtosis(returns)
         
         # 添加统计信息文本
-        stats_text = (f'均值: {mean:.2f}%   中位数: {median:.2f}%   标准差: {std:.2f}%\n'
-                     f'偏度: {skew:.2f}   峰度: {kurt:.2f}')
+        stats_text = (f'Mean: {mean:.2f}%   Median: {median:.2f}%   Std Dev: {std:.2f}%\n'
+                     f'Skewness: {skew:.2f}   Kurtosis: {kurt:.2f}')
         axs[i].text(0.02, 0.95, stats_text, transform=axs[i].transAxes, fontsize=10,
                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         # 添加垂直线标记均值和中位数
-        axs[i].axvline(mean, color='red', linestyle='--', label=f'均值: {mean:.2f}%')
-        axs[i].axvline(median, color='green', linestyle='-.', label=f'中位数: {median:.2f}%')
+        axs[i].axvline(mean, color='red', linestyle='--', label=f'Mean: {mean:.2f}%')
+        axs[i].axvline(median, color='green', linestyle='-.', label=f'Median: {median:.2f}%')
         axs[i].axvline(0, color='black', linestyle='-')
         
         # 设置坐标轴和标题
-        axs[i].set_title(f'{name}日收益分布', fontsize=12)
-        axs[i].set_xlabel('日收益率 (%)', fontsize=10)
-        axs[i].set_ylabel('频数', fontsize=10)
+        axs[i].set_title(f'{eng_name} Daily Return Distribution', fontsize=12)
+        axs[i].set_xlabel('Daily Return (%)', fontsize=10)
+        axs[i].set_ylabel('Frequency', fontsize=10)
         axs[i].legend()
         axs[i].grid(True, linestyle='--', alpha=0.5)
     
