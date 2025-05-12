@@ -7,7 +7,7 @@ import pandas as pd
 from scipy import stats
 
 def calculate_performance_metrics(returns, risk_free_rate=0.02/252):
-    """计算策略绩效指标
+    """计算策略绩效指标集
     
     Args:
         returns: 收益率序列
@@ -16,7 +16,6 @@ def calculate_performance_metrics(returns, risk_free_rate=0.02/252):
     Returns:
         dict: 包含各项绩效指标的字典
     """
-    # 过滤掉NaN值
     returns = returns.dropna()
     
     # 累积收益
@@ -42,7 +41,7 @@ def calculate_performance_metrics(returns, risk_free_rate=0.02/252):
     max_drawdown = drawdown.min()
     max_drawdown_date = drawdown.idxmin()
     
-    # Calmar比率
+    # Calmar 比率
     calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else np.nan
     
     # 索提诺比率
@@ -162,7 +161,7 @@ def analyze_by_market_state(df, strategies):
     for state in range(1, 7):
         state_mask = (df['market_state_smooth'] == state)
         
-        if sum(state_mask) > 0:  # 确保有足够的样本
+        if sum(state_mask) > 0:
             state_df = df[state_mask]
             
             state_data = {
@@ -191,12 +190,9 @@ def analyze_covid_period(df, strategies, covid_start, covid_end, recovery_end):
     Returns:
         DataFrame: COVID-19期间各策略表现
     """
-    # 转换日期字符串为Timestamp
     covid_start = pd.Timestamp(covid_start)
     covid_end = pd.Timestamp(covid_end)
     recovery_end = pd.Timestamp(recovery_end)
-    
-    # 提取COVID-19危机期间和恢复期的数据
     crisis_df = df[(df.index >= covid_start) & (df.index <= covid_end)]
     recovery_df = df[(df.index > covid_end) & (df.index <= recovery_end)]
     
@@ -241,10 +237,7 @@ def train_test_split_analysis(df, strategies, split_date):
     Returns:
         tuple: (样本内绩效DataFrame, 样本外绩效DataFrame)
     """
-    # 转换日期字符串为Timestamp
     split_date = pd.Timestamp(split_date)
-    
-    # 划分训练集和测试集
     train_df = df[df.index < split_date]
     test_df = df[df.index >= split_date]
     

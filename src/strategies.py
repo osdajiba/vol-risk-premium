@@ -16,7 +16,6 @@ def term_structure_strategy(df):
     df.loc[long_condition, 'ts_signal'] = 1
     df.loc[short_condition, 'ts_signal'] = -1
     
-    # Updated ffill implementation
     df['ts_signal'] = df['ts_signal'].replace(0, np.nan).ffill().fillna(0)
     
     df['vix_futures_vol'] = df['vix_futures_f1'].pct_change().rolling(window=20).std() * np.sqrt(252)
@@ -30,22 +29,21 @@ def term_structure_strategy(df):
     return df
 
 def etf_hedge_strategy(df):
-    """波动率ETF对冲策略"""
+    """波动率 ETF 对冲策略"""
     df['etf_signal'] = 0
     short_condition = (df['vix'] < 20) & (df['term_structure'] < 1)
     df.loc[short_condition, 'etf_signal'] = -1
-    
-    # Updated ffill implementation
+
     df['etf_signal'] = df['etf_signal'].replace(0, np.nan).ffill().fillna(0)
     
     vix_spike1 = df['vix_change'] > config.VIX_SPIKE_THRESHOLD_1
     vix_spike2 = df['vix_change'] > config.VIX_SPIKE_THRESHOLD_2
     
-    current_signal = df['etf_signal'].copy().astype(float)  # Convert to float
+    current_signal = df['etf_signal'].copy().astype(float)
     for i in range(1, len(df)):
-        if current_signal.iloc[i] == -1:  # Use iloc for positional indexing
+        if current_signal.iloc[i] == -1:
             if vix_spike2.iloc[i]:
-                current_signal.iloc[i] = 0
+                current_signal.iloc[i] = 0.0
             elif vix_spike1.iloc[i]:
                 current_signal.iloc[i] = -0.5
     

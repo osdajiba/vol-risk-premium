@@ -7,8 +7,9 @@ import pandas as pd
 import config
 import logging
 
-# 设置日志
+
 logger = logging.getLogger('market_state')
+
 
 def classify_market_states(df):
     """根据VIX水平、市场趋势和期限结构识别市场状态
@@ -71,11 +72,8 @@ def classify_market_states(df):
     
     states = [1, 2, 3, 4, 5, 6]
     
-    # 使用np.select进行向量化分类
-    df['market_state'] = np.select(conditions, states, default=3)
-    
-    # 应用状态平滑处理
-    df['market_state_smooth'] = smooth_market_state(df['market_state'], window=config.SMOOTH_WINDOW)
+    df['market_state'] = np.select(conditions, states, default=3)    # 使用np.select进行向量化分类
+    df['market_state_smooth'] = smooth_market_state(df['market_state'], window=config.SMOOTH_WINDOW)    # 应用状态平滑处理
     
     return df
 
@@ -89,7 +87,6 @@ def smooth_market_state(states, window=3):
     Returns:
         平滑后的市场状态序列
     """
-    # 检查序列是否为空
     if states.empty:
         logger.warning("市场状态序列为空，无法进行平滑处理")
         return states
@@ -101,14 +98,13 @@ def smooth_market_state(states, window=3):
         logger.warning(f"市场状态序列长度 {len(states)} 小于平滑窗口 {window}，跳过平滑处理")
         return smoothed
     
-    # 转换为numpy数组以提高处理速度
     states_array = states.values
     smoothed_array = smoothed.values
     
     for i in range(window, len(states_array)):
         # 只有当同一状态持续出现时才切换
         if states_array[i] != smoothed_array[i-1]:
-            # 检查前window个状态是否一致
+            # 检查前 window 个状态是否一致
             if np.all(states_array[i-window+1:i+1] == states_array[i]):
                 smoothed_array[i] = states_array[i]
             else:
@@ -125,7 +121,6 @@ def analyze_market_states(df):
     Returns:
         dict: 包含市场状态分析的字典
     """
-    # 检查DataFrame是否为空或是否包含必要的列
     if df.empty or 'market_state_smooth' not in df.columns:
         logger.warning("输入的DataFrame为空或不包含market_state_smooth列，无法分析市场状态")
         return {
@@ -135,7 +130,6 @@ def analyze_market_states(df):
             'avg_duration': pd.Series()
         }
     
-    # 检查market_state_smooth是否包含有效值
     if df['market_state_smooth'].isna().all():
         logger.warning("market_state_smooth列全为NaN，无法分析市场状态")
         return {
@@ -159,7 +153,7 @@ def analyze_market_states(df):
     # 计算各状态的平均持续时间
     durations = []
     
-    if len(df) > 0:  # 确保DataFrame不为空
+    if len(df) > 0:
         current_state = df['market_state_smooth'].iloc[0]
         current_duration = 1
         
@@ -174,16 +168,12 @@ def analyze_market_states(df):
         # 添加最后一个状态的持续时间
         durations.append((current_state, current_duration))
     
-    # 转换为DataFrame
     durations_df = pd.DataFrame(durations, columns=['state', 'duration']) if durations else pd.DataFrame(columns=['state', 'duration'])
-    
-    # 如果durations_df为空，则创建一个空的Series作为avg_duration
     if durations_df.empty:
         avg_duration = pd.Series(dtype='float64')
     else:
         avg_duration = durations_df.groupby('state')['duration'].mean()
     
-    # 返回分析结果
     return {
         'state_counts': state_counts,
         'state_percent': state_percent,

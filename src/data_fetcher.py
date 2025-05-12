@@ -15,37 +15,32 @@ from io import StringIO
 import logging
 import json
 
-# 配置日志
-logger = logging.getLogger('data_fetcher')
 
-# 确保数据缓存目录存在
+logger = logging.getLogger('data_fetcher')
 CACHE_DIR = config.DATA_CACHE_DIR
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
     logger.info(f"创建数据缓存目录: {CACHE_DIR}")
 
+
 def get_cache_path(ticker, start_date, end_date):
     """获取缓存文件路径"""
-    # 替换不合法的文件名字符
-    ticker_safe = ticker.replace('^', '').replace('.', '_')
+    ticker_safe = ticker.replace('^', '').replace('.', '_')    # 替换不合法的文件名字符
     return os.path.join(CACHE_DIR, f"{ticker_safe}_{start_date}_{end_date}.csv")
 
 def is_cache_valid(cache_path, max_age_days=config.CACHE_MAX_AGE_DAYS):
     """检查缓存是否有效"""
     if not os.path.exists(cache_path):
         return False
-    
-    # 检查文件是否为空
     if os.path.getsize(cache_path) == 0:
         logger.warning(f"缓存文件 {cache_path} 为空，需要重新下载")
         return False
     
-    # 检查缓存是否过期（可选）
+    # 检查缓存是否过期
     file_time = os.path.getmtime(cache_path)
     file_age = (time.time() - file_time) / (60 * 60 * 24)  # 转换为天数
     
-    # 仅当请求当前或最近数据时检查缓存年龄
-    # 对于历史回测数据，可以使用更长的缓存期
+    # 仅当请求当前或最近数据时检查缓存年龄, 对于历史回测数据，可以使用更长的缓存期
     today = datetime.now().strftime('%Y-%m-%d')
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     
@@ -69,7 +64,6 @@ def load_from_cache(cache_path):
 def save_to_cache(df, cache_path):
     """保存数据到缓存"""
     try:
-        # 确保父目录存在
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         df.to_csv(cache_path)
         logger.info(f"成功保存数据到缓存: {cache_path}")
@@ -80,7 +74,7 @@ def save_to_cache(df, cache_path):
 
 def fetch_from_yfinance(ticker, start_date, end_date, max_retries=config.DATA_MAX_RETRIES, 
                        min_delay=config.DATA_MIN_DELAY, max_delay=config.DATA_MAX_DELAY):
-    """从Yahoo Finance获取数据，包含增强的重试逻辑"""
+    """从Yahoo Finance获取数据, 包含增强的重试逻辑"""
     cache_path = get_cache_path(ticker, start_date, end_date)
     
     # 检查缓存
@@ -89,7 +83,7 @@ def fetch_from_yfinance(ticker, start_date, end_date, max_retries=config.DATA_MA
         if cached_data is not None and not cached_data.empty:
             return cached_data
     
-    logger.info(f"开始从Yahoo Finance下载 {ticker} 数据，日期范围: {start_date} - {end_date}")
+    logger.info(f"开始从 Yahoo Finance 下载 {ticker} 数据，日期范围: {start_date} - {end_date}")
     
     # 设置更大的初始延迟时间
     base_delay = min_delay
@@ -103,37 +97,31 @@ def fetch_from_yfinance(ticker, start_date, end_date, max_retries=config.DATA_MA
             logger.info(f"预防性延迟 {wait_time:.2f} 秒...")
             time.sleep(wait_time)
             
-            # 下载数据
-            data = yf.download(ticker, start=start_date, end=end_date, progress=False, timeout=30)
+            data = yf.download(ticker, start=start_date, end=end_date, progress=False, timeout=30)    # 下载数据
             
             if data.empty:
-                logger.warning(f"{ticker} 数据下载为空，重试...")
-                # 数据为空，可能是临时问题，增加延迟并重试
+                logger.warning(f"{ticker} 数据下载为空，重试...")    # 数据为空, 增加延迟并重试
                 base_delay = min(base_delay * 2, max_delay)
                 continue
             
             logger.info(f"成功下载 {ticker} 数据，共 {len(data)} 条记录")
-            
-            # 保存到缓存
             save_to_cache(data, cache_path)
-            
             return data
             
         except Exception as e:
-            # 详细记录错误信息
             if hasattr(e, 'status_code'):
                 logger.error(f"下载 {ticker} 数据失败: HTTP状态码 {e.status_code}, {str(e)}")
             else:
                 logger.error(f"下载 {ticker} 数据失败: {str(e)}")
-            
+                
+            # 使用指数退避策略，延迟时间随重试次数增加
             if attempt < max_retries:
-                # 使用指数退避策略，延迟时间随重试次数增加
                 delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 2)
                 delay = min(delay, max_delay * 2)  # 设置最大延迟上限
                 logger.info(f"等待 {delay:.2f} 秒后重试...")
                 time.sleep(delay)
-                # 增加基本延迟用于下次尝试
-                base_delay = min(base_delay * 1.5, max_delay)
+                base_delay = min(base_delay * 1.5, max_delay)    # 增加基本延迟用于下次尝试
+                
             else:
                 logger.error(f"已达到最大重试次数，无法获取 {ticker} 数据")
                 # 如果所有重试都失败，尝试返回可能的缓存数据，即使它可能已过期
@@ -143,7 +131,7 @@ def fetch_from_yfinance(ticker, start_date, end_date, max_retries=config.DATA_MA
                     return cached_data
                 raise
     
-    return pd.DataFrame()  # 如果所有尝试都失败，返回空DataFrame
+    return pd.DataFrame()
 
 def try_alternative_source(ticker, start_date, end_date):
     """从FRED等替代数据源获取数据"""
@@ -175,16 +163,14 @@ def try_alternative_source(ticker, start_date, end_date):
 def fetch_from_fred(series_id, start_date, end_date, max_retries=3):
     """从FRED（美联储经济数据）获取数据"""
     cache_path = get_cache_path(f"FRED_{series_id}", start_date, end_date)
-    
-    # 检查缓存
+
     if is_cache_valid(cache_path):
         cached_data = load_from_cache(cache_path)
         if cached_data is not None:
             return cached_data
     
     # FRED API接口URL
-    # 注意：FRED提供免费API，但需要注册获取API密钥
-    # 这里使用公共访问URL，但有调用限制
+    # 注意：FRED提供免费API, 但需要注册获取API密钥, 这里使用公共访问URL，但有调用限制
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
     
     for attempt in range(max_retries):
@@ -193,18 +179,14 @@ def fetch_from_fred(series_id, start_date, end_date, max_retries=3):
             response = requests.get(url, timeout=30)
             response.raise_for_status()
             
-            # 解析CSV数据
             data = pd.read_csv(StringIO(response.text), parse_dates=True, index_col=0)
             data.columns = ['Close']  # 与YF格式一致
             
-            # 过滤日期范围
             start = pd.to_datetime(start_date)
             end = pd.to_datetime(end_date)
             data = data[(data.index >= start) & (data.index <= end)]
             
-            # 保存到缓存
             save_to_cache(data, cache_path)
-            
             return data
             
         except Exception as e:
@@ -236,9 +218,8 @@ def check_for_local_data(ticker, start_date, end_date):
     if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
         try:
             logger.info(f"尝试从本地文件加载 {ticker} 数据: {local_file}")
-            df = pd.read_csv(local_file, index_col=0, parse_dates=True)
             
-            # 过滤日期范围
+            df = pd.read_csv(local_file, index_col=0, parse_dates=True)
             start = pd.to_datetime(start_date)
             end = pd.to_datetime(end_date)
             
@@ -282,8 +263,6 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
         try:
             logger.info(f"尝试从本地合并文件加载数据: {combined_file}")
             combined_df = pd.read_csv(combined_file, index_col=0, parse_dates=True)
-            
-            # 过滤日期范围
             start = pd.to_datetime(adjusted_start_str)
             end = pd.to_datetime(end_date)
             
@@ -304,7 +283,6 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
                     
                     calculate_technical_indicators(filtered_df)
                     
-                    # 保存更新后的数据
                     save_to_cache(filtered_df, combined_file)
                     return filtered_df
             else:
@@ -312,10 +290,8 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
         except Exception as e:
             logger.error(f"从本地合并文件加载数据失败: {str(e)}")
     
-    # 组合数据缓存路径
+    # 设置组合数据缓存路径
     combined_cache_path = get_cache_path("combined_market_data", adjusted_start_str, end_date)
-    
-    # 检查组合数据缓存是否有效
     if use_cache and not force_download and is_cache_valid(combined_cache_path):
         combined_data = load_from_cache(combined_cache_path)
         if combined_data is not None and not combined_data.empty:
@@ -333,11 +309,11 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
                     # 生成期货数据和计算技术指标
                     generate_synthetic_vix_futures(combined_data)
                     calculate_technical_indicators(combined_data)
-                    # 保存更新后的数据
+
                     save_to_cache(combined_data, combined_cache_path)
                     return combined_data
     
-    # 使用单独数据源获取数据
+    # 使用独立数据源获取数据
     tickers = ['^VIX', '^GSPC', 'VXX']
     data_dict = {}
     
@@ -349,13 +325,13 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
                 data_dict[ticker] = local_data['Close'] if 'Close' in local_data.columns else local_data.iloc[:, 0]
                 logger.info(f"从本地文件成功加载 {ticker} 数据，共 {len(local_data)} 条记录")
     
-    # 对于没有从本地加载的数据，从网络获取
+    # 从网络获取无法从本地加载的数据
     missing_tickers = [ticker for ticker in tickers if ticker not in data_dict]
     
     if missing_tickers:
         logger.info(f"尝试从网络获取以下数据: {', '.join(missing_tickers)}")
         
-        # 使用批量下载模式获取多个股票数据
+        # 批量下载模式获取多个股票数据
         try:
             if len(missing_tickers) > 1:  # 如果有多个缺失的股票，尝试批量下载
                 batch_delay = random.uniform(1, 3)
@@ -382,7 +358,7 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
             if ticker not in data_dict or data_dict[ticker].empty:
                 logger.info(f"单独下载 {ticker} 数据...")
                 
-                # 从Yahoo Finance获取数据
+                # 从 Yahoo Finance 获取数据
                 try:
                     ticker_data = fetch_from_yfinance(ticker, adjusted_start_str, end_date)
                     if not ticker_data.empty and 'Close' in ticker_data.columns:
@@ -412,22 +388,16 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
     if '^VIX' not in data_dict or '^GSPC' not in data_dict:
         raise ValueError("无法获取必需的VIX或S&P500数据")
     
-    # 创建主数据框
-    df = pd.DataFrame()
-    
-    # 添加收盘价数据
+    df = pd.DataFrame()    # 创建主数据框
     df['vix'] = data_dict['^VIX']
     df['spx'] = data_dict['^GSPC']
     
-    # VXX是可选的，如果没有获取到，可以使用合成数据
     if 'VXX' in data_dict and not data_dict['VXX'].empty:
         df['vxx'] = data_dict['VXX']
     else:
         logger.warning("未能获取VXX数据，将使用合成数据")
-        # 基于VIX创建合成VXX
-        df['vxx'] = generate_synthetic_vxx(df['vix'])
+        df['vxx'] = generate_synthetic_vxx(df['vix'])    # 基于VIX创建合成VXX
     
-    # 确保数据没有缺失
     df = df.dropna(subset=['vix', 'spx'])
     
     if df.empty:
@@ -444,9 +414,7 @@ def fetch_market_data(start_date=config.START_DATE, end_date=config.END_DATE,
         save_to_cache(df, combined_cache_path)
         save_to_cache(df, config.DEFAULT_COMBINED_DATA)  # 同时保存到默认合并文件
     
-    # 只保留回测期间的数据
-    df = df[df.index >= start_date]
-    
+    df = df[df.index >= start_date]    # 只保留回测期间的数据
     return df
 
 def generate_synthetic_vxx(vix_series):
@@ -457,8 +425,7 @@ def generate_synthetic_vxx(vix_series):
     # 使用随机游走模型，初始化为100
     np.random.seed(42)  # 固定随机种子以确保可重复性
     
-    # 从初始值开始
-    synthetic_vxx = [100]
+    synthetic_vxx = [100]    # 从初始值开始
     
     # 定义年化衰减率（由于期货展期成本）
     decay_annual = 0.3  # 30%的年化衰减率
@@ -485,7 +452,6 @@ def generate_synthetic_vix_futures(df):
     这是一个简化模型，用于生成近似的VIX期货数据。
     实际应用中应使用真实的期货数据。
     """
-    # 检查DataFrame是否为空
     if df.empty or 'vix' not in df.columns:
         logger.warning("无法生成VIX期货数据：DataFrame为空或缺少VIX列")
         return df
@@ -495,11 +461,9 @@ def generate_synthetic_vix_futures(df):
     
     # 假设近月期货的升贴水与VIX水平和历史波动率相关
     # 低VIX时期，期货通常有升水；高VIX时期，期货可能有贴水
-    vix_premium = np.where(df['vix'] < 20, 
-                         0.05 * (20 - df['vix']), 
-                         -0.03 * (df['vix'] - 20))
+    vix_premium = np.where(df['vix'] < 20, 0.05 * (20 - df['vix']), -0.03 * (df['vix'] - 20))
     
-    # 添加小幅随机扰动以模拟市场噪音
+    # 添加小幅随机扰动, 模拟市场噪音
     np.random.seed(42)
     noise = np.random.normal(0, 0.5, len(df))
     
@@ -518,8 +482,6 @@ def generate_synthetic_vix_futures(df):
     np.random.seed(43)
     reversal = np.random.random(len(df)) < reversal_prob
     reversal_mask = high_vix_mask & reversal
-    
-    # 应用反转
     temp = df.loc[reversal_mask, 'vix_futures_f1'].copy()
     df.loc[reversal_mask, 'vix_futures_f1'] = df.loc[reversal_mask, 'vix_futures_f2']
     df.loc[reversal_mask, 'vix_futures_f2'] = temp
@@ -531,7 +493,6 @@ def generate_synthetic_vix_futures(df):
 
 def calculate_technical_indicators(df):
     """计算回测所需的技术指标"""
-    # 检查DataFrame是否为空
     if df.empty or 'spx' not in df.columns or 'vix' not in df.columns:
         logger.warning("无法计算技术指标：DataFrame为空或缺少必要列")
         return df
@@ -560,7 +521,6 @@ def fetch_data_from_file(file_path, start_date=None, end_date=None):
         df = pd.read_csv(file_path, index_col=0, parse_dates=True)
         logger.info(f"从文件加载数据: {file_path}")
         
-        # 筛选日期范围
         if start_date:
             start_date = pd.to_datetime(start_date)
             df = df[df.index >= start_date]

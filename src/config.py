@@ -2,15 +2,15 @@
 波动率风险溢价捕捉系统配置文件
 """
 
-# 回测参数
+# 回测日期参数
 START_DATE = '2015-01-01'
 END_DATE = '2023-12-31'
 
-# 数据API参数
+# 数据 API 参数
 API_KEY = ""  # 如需使用付费API，可在此处填写
 
 # 数据获取参数
-DATA_CACHE_DIR = 'data'             # 数据缓存目录
+DATA_CACHE_DIR = 'data'             # 本地数据目录
 CACHE_MAX_AGE_DAYS = 1              # 缓存最大有效期(天)
 DATA_MAX_RETRIES = 5                # 数据下载最大重试次数
 DATA_MIN_DELAY = 2                  # 数据下载最小延迟(秒)
@@ -53,7 +53,7 @@ STATE_WEIGHTS = {
 # 权重调整速度
 MAX_DAILY_WEIGHT_CHANGE = 0.1  # 每日最多调整10%
 
-# COVID-19研究期间
+# COVID-19 时期
 COVID_START = '2020-02-19'
 COVID_END = '2020-03-23'
 COVID_RECOVERY_END = '2020-05-31'

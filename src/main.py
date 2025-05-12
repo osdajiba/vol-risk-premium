@@ -1,7 +1,7 @@
 """
-波动率风险溢价捕捉系统 - 主程序入口
+波动率风险溢价捕捉系统
 
-基于市场状态的动态策略选择框架，结合波动率期限结构交易策略和波动率ETF对冲策略
+基于市场状态的动态策略选择框架, 结合波动率期限结构交易策略和波动率ETF对冲策略
 """
 
 import os
@@ -14,27 +14,18 @@ import argparse
 import matplotlib.pyplot as plt
 import traceback
 import sys
+import config
 
-# 确保src目录在模块搜索路径中
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-# 导入系统各模块
-import config
-from data_fetcher import fetch_market_data, fetch_data_from_file
-from market_state import classify_market_states, analyze_market_states
-from strategies import term_structure_strategy, etf_hedge_strategy
-from dynamic_selection import dynamic_strategy_selection, analyze_state_transitions
-from performance import (
-    compare_strategies, analyze_by_market_state, analyze_covid_period,
-    train_test_split_analysis
-)
-from visualization import (
-    plot_strategy_performance, plot_market_states, plot_state_performance,
-    plot_covid_analysis, plot_weight_transition, plot_train_test_comparison,
-    plot_returns_distribution
-)
+from data_fetcher import *
+from market_state import *
+from strategies import *
+from dynamic_selection import *
+from performance import *
+from visualization import *
 
-# 配置日志
+
 def setup_logging():
     """配置日志系统"""
     log_level = getattr(logging, config.LOG_LEVEL)
@@ -48,7 +39,6 @@ def setup_logging():
     if logger.handlers:
         logger.handlers = []
     
-    # 确保日志目录存在
     log_dir = os.path.dirname(config.LOG_FILE)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -87,7 +77,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
         logger: 日志记录器
         
     Returns:
-        dict: 包含回测结果的字典
+        dict: 回测结果
     """
     start_time = time.time()
     if logger:
@@ -104,7 +94,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
             logger.info(f"创建输出目录: {output_dir}")
     
     try:
-        # 步骤1: 获取市场数据
+        # 1. 获取市场数据
         if local_file:
             if logger:
                 logger.info(f"从本地文件加载数据: {local_file}")
@@ -131,7 +121,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
         if logger:
             logger.info(f"成功获取市场数据，共 {len(df)} 个交易日")
         
-        # 步骤2: 市场状态分类
+        # 2. 市场状态分类
         if logger:
             logger.info("进行市场状态分类...")
         df = classify_market_states(df)
@@ -147,7 +137,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
         
         market_state_analysis = analyze_market_states(df)
         
-        # 步骤3: 实现单一策略
+        # 3. 策略实现
         if logger:
             logger.info("执行期限结构交易策略...")
         df = term_structure_strategy(df)
@@ -156,14 +146,12 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
             logger.info("执行ETF对冲策略...")
         df = etf_hedge_strategy(df)
         
-        # 步骤4: 动态策略选择
         if logger:
             logger.info("执行动态策略选择...")
         df = dynamic_strategy_selection(df)
         state_transitions = analyze_state_transitions(df)
         
-        # 步骤5: 绩效分析
-        # 定义策略列表
+        # 步骤4: 绩效分析
         strategies = [
             ('期限结构策略', 'ts_returns_net'),
             ('ETF对冲策略', 'etf_returns_net'),
@@ -173,8 +161,6 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
         
         if logger:
             logger.info("进行策略绩效分析...")
-        
-        # 比较策略绩效
         performance_comparison = compare_strategies(df, strategies)
         print("\n==== 策略绩效对比 ====")
         print(performance_comparison[['期限结构策略', 'ETF对冲策略', '动态策略选择']].loc[
@@ -187,7 +173,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
         print(state_performance[['Days', 'Percentage(%)', '期限结构策略 Monthly Return(%)', 
                             'ETF对冲策略 Monthly Return(%)', '动态策略选择 Monthly Return(%)']])
         
-        # COVID-19案例分析
+        # COVID-19 时期案例分析
         covid_analysis = analyze_covid_period(
             df, strategies, 
             covid_start=config.COVID_START,
@@ -211,7 +197,7 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
             ['Annual Return(%)', 'Sharpe Ratio', 'Max Drawdown(%)']
         ])
         
-        # 步骤6: 可视化
+        # 5. 可视化
         if save_plots:
             if logger:
                 logger.info("生成策略分析图表...")
@@ -259,7 +245,6 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
             'state_transitions': state_transitions
         }
         
-        # 保存结果数据
         if save_plots:
             if logger:
                 logger.info("保存回测结果数据...")
@@ -287,7 +272,6 @@ def run_backtest(start_date=config.START_DATE, end_date=config.END_DATE,
 
 
 def parse_args():
-    """解析命令行参数"""
     parser = argparse.ArgumentParser(description='波动率风险溢价捕捉系统')
     parser.add_argument('--start_date', type=str, default=config.START_DATE,
                         help='回测起始日期，格式：YYYY-MM-DD')
@@ -306,12 +290,10 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    # 设置日志
-    logger = setup_logging()
-    logger.info("启动波动率风险溢价捕捉系统")
+def main():
+    logger = setup_logging()    # 设置日志
+    logger.info("--启动波动率风险溢价捕捉系统--")
     
-    # 解析命令行参数
     args = parse_args()
     
     # 运行回测
@@ -325,3 +307,6 @@ if __name__ == "__main__":
         local_file=args.local_file,
         logger=logger
     )
+
+if __name__ == "__main__":
+    main()

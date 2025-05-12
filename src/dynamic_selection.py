@@ -29,24 +29,17 @@ def dynamic_strategy_selection(df):
         df.loc[mask, 'etf_target_weight'] = etf_w
     
     # 渐进式权重调整（每日最多调整MAX_DAILY_WEIGHT_CHANGE）
-    # 使用向量化操作需要特殊处理
     ts_weight = df['ts_weight'].copy()
     etf_weight = df['etf_weight'].copy()
     
     # 递归调整权重
     for i in range(1, len(df)):
-        # 计算目标权重和当前权重的差距
-        ts_diff = df['ts_target_weight'].iloc[i] - ts_weight.iloc[i-1]
-        
-        # 限制每日调整幅度
+        ts_diff = df['ts_target_weight'].iloc[i] - ts_weight.iloc[i-1]    # 计算目标权重和当前权重的差距, 限制每日调整幅度
         if abs(ts_diff) > config.MAX_DAILY_WEIGHT_CHANGE:
             ts_diff = np.sign(ts_diff) * config.MAX_DAILY_WEIGHT_CHANGE
-        
-        # 应用调整
+
         ts_weight.iloc[i] = ts_weight.iloc[i-1] + ts_diff
         etf_weight.iloc[i] = 1 - ts_weight.iloc[i]  # 确保权重和为1
-    
-    # 更新DataFrame
     df['ts_weight'] = ts_weight
     df['etf_weight'] = etf_weight
     
@@ -55,12 +48,8 @@ def dynamic_strategy_selection(df):
     df.loc[recovery_mask, 'etf_weight'] = 0
     df.loc[recovery_mask, 'ts_weight'] = 1
     
-    # 计算动态组合收益
-    df['dynamic_returns'] = (df['ts_weight'] * df['ts_returns_net'] + 
-                             df['etf_weight'] * df['etf_returns_net'])
-    
-    # 额外计算等权重组合收益（作为基准比较）
-    df['equal_weight_returns'] = 0.5 * df['ts_returns_net'] + 0.5 * df['etf_returns_net']
+    df['dynamic_returns'] = (df['ts_weight'] * df['ts_returns_net'] + df['etf_weight'] * df['etf_returns_net'])    # 计算动态组合收益
+    df['equal_weight_returns'] = 0.5 * df['ts_returns_net'] + 0.5 * df['etf_returns_net']    # 额外计算等权重组合收益（作为 baseline 比较）
     
     return df
 
@@ -73,8 +62,7 @@ def calculate_strategy_exposure(df):
     Returns:
         DataFrame: 添加了风险敞口指标的DataFrame
     """
-    # 计算各策略在组合中的风险贡献
-    # 首先计算各策略的波动率
+    # 计算各策略的波动率
     df['ts_vol'] = df['ts_returns_net'].rolling(window=20).std() * np.sqrt(252)
     df['etf_vol'] = df['etf_returns_net'].rolling(window=20).std() * np.sqrt(252)
     
