@@ -1,0 +1,145 @@
+==== Volatility Risk Premium Capture System - Robustness Test Report ====
+Generated at: 2025-05-13 03:39:15
+
+== 1. Parameter Sensitivity Test ==
+
+-- Parameter: VIX_LOW_THRESHOLD --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+12         1.34            0.77                 0.25                 1.25           
+14         1.25            0.77                 0.25                 1.25           
+15         1.18            0.77                 0.25                 1.25           
+17         0.83            0.77                 0.25                 1.25           
+19         0.88            0.77                 0.25                 1.25           
+
+-- Parameter: VIX_MID_THRESHOLD --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+22         1.18            0.77                 0.25                 1.25           
+24         1.17            0.77                 0.25                 1.25           
+25         1.18            0.77                 0.25                 1.25           
+27         1.19            0.77                 0.25                 1.25           
+29         1.14            0.77                 0.25                 1.25           
+
+-- Parameter: SMOOTH_WINDOW --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+1          1.13            0.77                 0.25                 1.25           
+2          1.21            0.77                 0.25                 1.25           
+3          1.18            0.77                 0.25                 1.25           
+5          1.03            0.77                 0.25                 1.25           
+7          0.89            0.77                 0.25                 1.25           
+
+-- Parameter: TS_LOW_THRESHOLD --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+0.95       0.71            0.61                 0.25                 0.85           
+0.96       0.97            0.74                 0.25                 1.12           
+0.97       1.18            0.77                 0.25                 1.25           
+0.98       0.82            0.70                 0.25                 1.15           
+0.99       0.88            0.71                 0.25                 1.12           
+
+-- Parameter: TS_HIGH_THRESHOLD --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+1.01       0.89            0.68                 0.25                 0.84           
+1.02       0.92            0.64                 0.25                 0.89           
+1.03       1.18            0.77                 0.25                 1.25           
+1.04       1.07            0.66                 0.25                 1.26           
+1.05       1.04            0.67                 0.25                 1.33           
+
+-- Parameter: TREND_STRENGTH --
+Value      Dynamic Strategy Term Structure       ETF Hedge            Equal Weight   
+0.01       1.18            0.77                 0.25                 1.25           
+0.015      1.18            0.77                 0.25                 1.25           
+0.02       1.18            0.77                 0.25                 1.25           
+0.025      1.18            0.77                 0.25                 1.25           
+0.03       1.18            0.77                 0.25                 1.25           
+
+== 2. Alternative Indicators Test ==
+
+Test Case       Description                    Dynamic Strategy Annual Return(%) Max Drawdown(%)
+baseline        基准测试 (VIX + 50日均线)             1.18            52.40           31.07          
+ma_alt          使用200日均线代替50日均线                0.85            34.56           30.09          
+skew            使用SKEW代替VIX                    0.96            39.69           28.43          
+skew_ma_alt     同时使用SKEW和200日均线                1.30            69.75           28.17          
+
+== 3. In-Sample/Out-of-Sample Test ==
+
+-- Split Date: 2018-01-01 --
+In-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     2.38            NA              NA              NA              
+Sharpe Ratio         0.36            NA              NA              NA              
+Max Drawdown(%)      -46.28          NA              NA              NA              
+
+Out-of-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     61.59           -1.63           47.01           52.40           
+Sharpe Ratio         0.98            0.25            1.25            1.18            
+Max Drawdown(%)      -39.82          -82.60          -31.37          -31.07          
+
+-- Split Date: 2019-01-01 --
+In-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     31.24           -46.54          56.05           -0.95           
+Sharpe Ratio         0.70            -0.87           1.30            0.05            
+Max Drawdown(%)      -49.24          -45.89          -16.36          -16.62          
+
+Out-of-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     43.71           10.19           45.39           65.12           
+Sharpe Ratio         0.84            0.44            1.24            1.34            
+Max Drawdown(%)      -30.30          -82.60          -31.37          -31.07          
+
+-- Split Date: 2020-01-01 --
+In-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     23.14           -2.35           50.75           16.36           
+Sharpe Ratio         0.61            0.17            1.40            0.64            
+Max Drawdown(%)      -49.24          -45.89          -16.36          -17.77          
+
+Out-of-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     59.70           -1.28           45.24           73.62           
+Sharpe Ratio         1.00            0.28            1.18            1.37            
+Max Drawdown(%)      -30.30          -82.60          -31.37          -31.07          
+
+-- Split Date: 2021-01-01 --
+In-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     44.90           -30.42          44.34           19.74           
+Sharpe Ratio         0.83            -0.26           1.07            0.62            
+Max Drawdown(%)      -49.24          -82.60          -31.37          -30.09          
+
+Out-of-Sample Results:
+Metric               Term Structure  ETF Hedge       Equal Weight    Dynamic Strategy
+Annual Return(%)     24.41           38.19           49.68           93.11           
+Sharpe Ratio         0.62            0.85            1.56            1.67            
+Max Drawdown(%)      -30.30          -52.57          -24.43          -31.07          
+
+== 4. Robustness Test Summary ==
+
+1. VIX Threshold Sensitivity:
+   - VIX Low Threshold (12-19) Sharpe Ratio change: 0.51 (Min: 0.83, Max: 1.34)
+   - VIX Mid Threshold (22-29) Sharpe Ratio change: 0.05 (Min: 1.14, Max: 1.19)
+   Conclusion: Strategy relatively sensitive to VIX thresholds, optimization recommended
+
+2. State Smoothing Window Sensitivity:
+   - Window range (1-7) Sharpe Ratio change: 0.32 (Min: 0.89, Max: 1.21)
+   Conclusion: Strategy relatively sensitive to smoothing window, optimization recommended
+
+3. Alternative Indicators Test Summary:
+   - Baseline (VIX + 50-day MA) Sharpe Ratio: 1.18
+   - 使用200日均线代替50日均线: Sharpe Ratio 0.85 (Change: -0.33)
+   - 使用SKEW代替VIX: Sharpe Ratio 0.96 (Change: -0.22)
+   - 同时使用SKEW和200日均线: Sharpe Ratio 1.30 (Change: +0.12)
+   Conclusion: Strategy maintains good performance with alternative indicators, framework is robust
+
+4. In-Sample/Out-of-Sample Test Summary:
+   - Average In-Sample Sharpe Ratio: 0.43
+   - Average Out-of-Sample Sharpe Ratio: 1.46
+   - In/Out-of-Sample Difference: +1.03
+   Conclusion: Strategy maintains stable performance in out-of-sample tests, no significant overfitting
+
+== Final Conclusion ==
+
+Robustness Overall Rating: 3.5/5.0
+
+Overall Assessment: The strategy demonstrates good robustness, maintains stability under most test conditions, but there are some sensitive areas.
+Recommendation: Before application, optimize the identified sensitive parameters and enhance risk management mechanisms.

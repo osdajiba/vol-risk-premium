@@ -24,7 +24,7 @@ from strategies import *
 from dynamic_selection import *
 from performance import *
 from visualization import *
-from tests import comprehensive_robustness_test
+from robustness_tests import comprehensive_robustness_test
 
 
 def setup_logging():

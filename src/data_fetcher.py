@@ -54,12 +54,26 @@ def is_cache_valid(cache_path, max_age_days=config.CACHE_MAX_AGE_DAYS):
 def load_from_cache(cache_path):
     """从缓存加载数据"""
     try:
-        df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+        # 指定日期解析格式以避免警告
+        df = pd.read_csv(cache_path, index_col=0, parse_dates=True, date_format='%Y-%m-%d')
+        # 如果上面的解析失败，尝试标准ISO格式
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            df = pd.read_csv(cache_path, index_col=0)
+            df.index = pd.to_datetime(df.index, format='ISO8601')
+        
         logger.info(f"成功从缓存加载数据: {cache_path}")
         return df
     except Exception as e:
         logger.error(f"从缓存加载数据失败: {str(e)}")
-        return None
+        # 最后尝试不指定格式，让pandas自动推断
+        try:
+            df = pd.read_csv(cache_path, index_col=0)
+            df.index = pd.to_datetime(df.index)
+            logger.info(f"成功从缓存加载数据(使用自动日期解析): {cache_path}")
+            return df
+        except Exception as e2:
+            logger.error(f"使用自动日期解析从缓存加载数据失败: {str(e2)}")
+            return None
 
 def save_to_cache(df, cache_path):
     """保存数据到缓存"""

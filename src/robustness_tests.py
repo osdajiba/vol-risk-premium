@@ -15,6 +15,7 @@ import time
 import logging
 from datetime import datetime
 import config
+
 from market_state import classify_market_states
 from strategies import term_structure_strategy, etf_hedge_strategy
 from dynamic_selection import dynamic_strategy_selection
@@ -23,6 +24,11 @@ from data_fetcher import fetch_market_data, fetch_data_from_file
 
 
 logger = logging.getLogger('robustness')
+
+# 设置字体支持中文显示
+plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'SimSun', 'DejaVu Sans', 'Arial', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False    # 解决保存图像时负号'-'显示为方块的问题
+plt.rcParams['font.size'] = 14               # 增大默认字体大小
 
 
 def run_parameter_sensitivity(df, base_config, parameter_name, values, strategies, output_dir=None):
@@ -132,9 +138,14 @@ def get_skew_data(start_date, end_date, use_cache=True):
     logger.warning("尝试基于VIX生成合成SKEW数据")
     
     # 获取VIX数据
-    vix_data = fetch_from_yfinance("^VIX", start_date, end_date)
-    if vix_data is None or vix_data.empty:
-        logger.error("无法获取VIX数据, 无法生成合成SKEW数据")
+    try:
+        vix_data = fetch_from_yfinance("^VIX", start_date, end_date)
+        if vix_data is None or vix_data.empty:
+            logger.error("无法获取VIX数据, 无法生成合成SKEW数据")
+            # 返回None而不是引发异常
+            return None
+    except Exception as e:
+        logger.error(f"获取VIX数据失败: {str(e)}")
         return None
     
     # 生成合成SKEW数据 (SKEW通常在100-150范围内, 与VIX相关但不完全相关)
@@ -143,7 +154,11 @@ def get_skew_data(start_date, end_date, use_cache=True):
     vix_factor = 0.3  # VIX影响因子
     noise = np.random.normal(0, 5, len(vix_data))  # 随机噪声
     
-    synthetic_skew = base_skew + vix_factor * vix_data['Close'] + noise
+    # 确保vix_data['Close']是数值类型
+    vix_values = pd.to_numeric(vix_data['Close'], errors='coerce')
+    
+    # 使用数值创建合成SKEW
+    synthetic_skew = base_skew + vix_factor * vix_values + noise
     synthetic_skew = pd.Series(synthetic_skew, index=vix_data.index)
     
     logger.info(f"成功生成合成SKEW数据, 共 {len(synthetic_skew)} 条记录")
@@ -226,8 +241,8 @@ def run_alternative_indicators_test(start_date, end_date, strategies, output_dir
         for case_name, case in test_cases.items():
             if case['use_skew']:
                 case['df']['skew'] = skew_data.reindex(case['df'].index)
-                # 插值填充缺失值
-                case['df']['skew'] = case['df']['skew'].interpolate(method='linear')
+                # 先调用infer_objects将数据类型转换为合适的类型，然后再插值
+                case['df']['skew'] = case['df']['skew'].infer_objects(copy=False).interpolate(method='linear')
     
     # 运行每个测试用例
     results = {}
@@ -275,17 +290,31 @@ def run_alternative_indicators_test(start_date, end_date, strategies, output_dir
             'description': case['description'],
             'ma_window': case['ma_window'],
             'use_skew': case['use_skew'],
-            'dynamic_sharpe': performance['动态策略选择']['Sharpe Ratio'],
-            'dynamic_return': performance['动态策略选择']['Annual Return(%)'],
-            'dynamic_drawdown': performance['动态策略选择']['Max Drawdown(%)'],
-            'ts_sharpe': performance['期限结构策略']['Sharpe Ratio'],
-            'etf_sharpe': performance['ETF对冲策略']['Sharpe Ratio'],
-            'equal_sharpe': performance['等权组合']['Sharpe Ratio']
+            'dynamic_sharpe': performance['动态策略选择']['Sharpe Ratio'] if '动态策略选择' in performance else np.nan,
+            'dynamic_return': performance['动态策略选择']['Annual Return(%)'] if '动态策略选择' in performance else np.nan,
+            'dynamic_drawdown': performance['动态策略选择']['Max Drawdown(%)'] if '动态策略选择' in performance else np.nan,
+            'ts_sharpe': performance['期限结构策略']['Sharpe Ratio'] if '期限结构策略' in performance else np.nan,
+            'etf_sharpe': performance['ETF对冲策略']['Sharpe Ratio'] if 'ETF对冲策略' in performance else np.nan,
+            'equal_sharpe': performance['等权组合']['Sharpe Ratio'] if '等权组合' in performance else np.nan
         }
         
-        logger.info(f"测试 {name} 结果: 动态策略夏普比 = {results[name]['dynamic_sharpe']:.2f}, "
-                   f"年化收益 = {results[name]['dynamic_return']:.2f}%, "
-                   f"最大回撤 = {results[name]['dynamic_drawdown']:.2f}%")
+        # 安全地记录结果，处理可能的NaN值
+        try:
+            dynamic_sharpe = results[name]['dynamic_sharpe']
+            dynamic_return = results[name]['dynamic_return']
+            dynamic_drawdown = results[name]['dynamic_drawdown']
+            
+            # 检查值是否为NaN
+            sharpe_str = f"{dynamic_sharpe:.2f}" if not pd.isna(dynamic_sharpe) else "NA"
+            return_str = f"{dynamic_return:.2f}%" if not pd.isna(dynamic_return) else "NA"
+            drawdown_str = f"{dynamic_drawdown:.2f}%" if not pd.isna(dynamic_drawdown) else "NA"
+            
+            logger.info(f"测试 {name} 结果: 动态策略夏普比 = {sharpe_str}, "
+                       f"年化收益 = {return_str}, "
+                       f"最大回撤 = {drawdown_str}")
+        except Exception as e:
+            logger.error(f"记录测试结果时出错: {str(e)}")
+            logger.info(f"测试 {name} 已完成")
         
         # 恢复原始VIX (如果使用了SKEW)
         if case['use_skew'] and 'original_vix' in df.columns:
@@ -299,7 +328,6 @@ def run_alternative_indicators_test(start_date, end_date, strategies, output_dir
     logger.info("替代指标测试完成")
     
     return results
-
 
 def plot_parameter_sensitivity(results, parameter_name, values, filename=None):
     """绘制参数敏感性测试结果
@@ -376,7 +404,7 @@ def plot_alternative_indicators(results, filename=None):
     
     # 策略夏普比率对比
     strategies = ['dynamic_sharpe', 'ts_sharpe', 'etf_sharpe', 'equal_sharpe']
-    strategy_names = ['动态策略', '期限结构策略', 'ETF对冲策略', '等权组合']
+    strategy_names = ['Dynamic Strategy', 'Term Structure Strategy', 'ETF Hedge Strategy', 'Equal Weight']
     
     sharpe_data = {}
     for strategy, name in zip(strategies, strategy_names):
@@ -390,10 +418,18 @@ def plot_alternative_indicators(results, filename=None):
     x = np.arange(len(test_names))
     
     for i, (name, values) in enumerate(sharpe_data.items()):
-        ax1.bar(x + i*bar_width - bar_width*1.5, values, bar_width, label=name)
+        # 将NaN值替换为0以便绘图
+        plot_values = [v if not pd.isna(v) else 0 for v in values]
+        bars = ax1.bar(x + i*bar_width - bar_width*1.5, plot_values, bar_width, label=name)
+        
+        # 为非零非NaN值添加标签
+        for j, (val, plot_val) in enumerate(zip(values, plot_values)):
+            if not pd.isna(val) and plot_val != 0:
+                ax1.text(x[j] + i*bar_width - bar_width*1.5, plot_val + 0.05, 
+                        f'{val:.2f}', ha='center', va='bottom', fontsize=10)
     
-    ax1.set_title('不同指标组合下的夏普比率对比', fontsize=16)
-    ax1.set_ylabel('夏普比率', fontsize=14)
+    ax1.set_title('Sharpe Ratio Comparison with Different Indicators', fontsize=16)
+    ax1.set_ylabel('Sharpe Ratio', fontsize=14)
     ax1.set_xticks(x)
     ax1.set_xticklabels(descriptions, fontsize=12, rotation=45, ha='right')
     ax1.grid(True, linestyle='--', alpha=0.7, axis='y')
@@ -401,25 +437,44 @@ def plot_alternative_indicators(results, filename=None):
     
     # 绘制动态策略表现对比
     metrics = ['dynamic_return', 'dynamic_drawdown']
-    metric_names = ['年化收益(%)', '最大回撤(%)']
+    metric_names = ['Annual Return(%)', 'Max Drawdown(%)']
     colors = ['green', 'red']
     
     bar_width = 0.35
     x = np.arange(len(test_names))
     
     for i, (metric, name, color) in enumerate(zip(metrics, metric_names, colors)):
-        values = [abs(results[test][metric]) for test in test_names]
+        # 安全地提取数值并处理NaN和NaT
+        values = []
+        for test in test_names:
+            val = results[test][metric]
+            # 检查是否为NaN或NaT
+            if pd.isna(val):
+                values.append(0)  # 使用0代替NaN值
+            else:
+                # 安全地取绝对值，避免NaTType错误
+                try:
+                    values.append(abs(val))
+                except (TypeError, ValueError):
+                    values.append(0)
+        
         bars = ax2.bar(x + (i-0.5)*bar_width, values, bar_width, 
                      label=name, color=color, alpha=0.7)
         
-        # 添加数值标签
-        for bar, val in zip(bars, values):
-            height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height + 1,
-                    f'{val:.1f}', ha='center', va='bottom', fontsize=12)
+        # 只为有效值添加数值标签
+        for j, (bar, val, test) in enumerate(zip(bars, values, test_names)):
+            if val > 0:  # 只为非零值添加标签
+                raw_val = results[test][metric]
+                if not pd.isna(raw_val):
+                    try:
+                        height = bar.get_height()
+                        ax2.text(bar.get_x() + bar.get_width()/2., height + 1,
+                                f'{abs(raw_val):.1f}', ha='center', va='bottom', fontsize=12)
+                    except (TypeError, ValueError):
+                        pass  # 如果格式化失败，跳过标签
     
-    ax2.set_title('不同指标组合下的动态策略表现', fontsize=16)
-    ax2.set_ylabel('百分比 (%)', fontsize=14)
+    ax2.set_title('Dynamic Strategy Performance with Different Indicators', fontsize=16)
+    ax2.set_ylabel('Percentage (%)', fontsize=14)
     ax2.set_xticks(x)
     ax2.set_xticklabels(descriptions, fontsize=12, rotation=45, ha='right')
     ax2.grid(True, linestyle='--', alpha=0.7, axis='y')
@@ -428,8 +483,13 @@ def plot_alternative_indicators(results, filename=None):
     plt.tight_layout()
     
     if filename:
-        plt.savefig(filename, dpi=300)
-        logger.info(f"替代指标测试图表已保存至 {filename}")
+        try:
+            plt.savefig(filename, dpi=300)
+            logger.info(f"Alternative indicators test chart saved to {filename}")
+        except Exception as e:
+            logger.error(f"Error saving figure: {str(e)}")
+        
+    plt.close(fig)  # 关闭图表以释放内存
 
 
 def comprehensive_robustness_test(start_date=config.START_DATE, end_date=config.END_DATE, 
@@ -578,9 +638,27 @@ def plot_sample_split_comparison(split_results, filename=None):
     axs = axs.flatten()
     
     metrics = ['Sharpe Ratio', 'Annual Return(%)']
-    strategies = ['期限结构策略', 'ETF对冲策略', '动态策略选择']
+    strategies = ['Term Structure Strategy', 'ETF Hedge Strategy', 'Dynamic Strategy']
     
-    for i, (split_date, results) in enumerate(split_results.items()):
+    # 创建中英文策略名称映射
+    strategy_mapping = {
+        '期限结构策略': 'Term Structure Strategy',
+        'ETF对冲策略': 'ETF Hedge Strategy',
+        '动态策略选择': 'Dynamic Strategy',
+        '等权组合': 'Equal Weight'
+    }
+    
+    # 反向映射
+    reverse_mapping = {v: k for k, v in strategy_mapping.items()}
+    
+    # 限制每个图最多显示4个分割点
+    split_dates = list(split_results.keys())[:4]
+    
+    for i, split_date in enumerate(split_dates):
+        if i >= len(axs):  # 防止索引超出axs范围
+            break
+            
+        results = split_results[split_date]
         train_perf = results['train']
         test_perf = results['test']
         
@@ -588,15 +666,33 @@ def plot_sample_split_comparison(split_results, filename=None):
         x = np.arange(len(strategies))
         bar_width = 0.35
         
-        # 绘制夏普比率
-        train_sharpe = [train_perf[s]['Sharpe Ratio'] for s in strategies]
-        test_sharpe = [test_perf[s]['Sharpe Ratio'] for s in strategies]
+        # 根据策略名称映射获取夏普比率
+        train_sharpe = []
+        test_sharpe = []
         
-        bar1 = ax.bar(x - bar_width/2, train_sharpe, bar_width, label='样本内', alpha=0.7)
-        bar2 = ax.bar(x + bar_width/2, test_sharpe, bar_width, label='样本外', alpha=0.7)
+        for strategy_en in strategies:
+            # 查找对应的中文策略名
+            strategy_cn = reverse_mapping.get(strategy_en)
+            
+            # 获取夏普比率数据
+            if strategy_cn and strategy_cn in train_perf:
+                train_val = train_perf[strategy_cn]['Sharpe Ratio']
+                test_val = test_perf[strategy_cn]['Sharpe Ratio']
+            elif strategy_en in train_perf:  # 尝试直接使用英文名
+                train_val = train_perf[strategy_en]['Sharpe Ratio']
+                test_val = test_perf[strategy_en]['Sharpe Ratio']
+            else:
+                train_val = np.nan
+                test_val = np.nan
+            
+            train_sharpe.append(train_val if not pd.isna(train_val) else 0)
+            test_sharpe.append(test_val if not pd.isna(test_val) else 0)
         
-        ax.set_title(f'分割日期: {split_date}', fontsize=14)
-        ax.set_ylabel('夏普比率', fontsize=14)
+        bar1 = ax.bar(x - bar_width/2, train_sharpe, bar_width, label='In-Sample', alpha=0.7)
+        bar2 = ax.bar(x + bar_width/2, test_sharpe, bar_width, label='Out-of-Sample', alpha=0.7)
+        
+        ax.set_title(f'Split Date: {split_date}', fontsize=14)
+        ax.set_ylabel('Sharpe Ratio', fontsize=14)
         ax.set_xticks(x)
         ax.set_xticklabels(strategies, fontsize=12)
         ax.grid(True, linestyle='--', alpha=0.5, axis='y')
@@ -605,11 +701,12 @@ def plot_sample_split_comparison(split_results, filename=None):
         for bars in [bar1, bar2]:
             for bar in bars:
                 height = bar.get_height()
-                ax.annotate(f'{height:.2f}',
-                           xy=(bar.get_x() + bar.get_width() / 2, height),
-                           xytext=(0, 3),  # 3 points vertical offset
-                           textcoords="offset points",
-                           ha='center', va='bottom', fontsize=11)
+                if not np.isnan(height) and height != 0:  # 只为非零非NaN的数值添加标签
+                    ax.annotate(f'{height:.2f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),  # 3 points vertical offset
+                              textcoords="offset points",
+                              ha='center', va='bottom', fontsize=11)
         
         if i == 0:
             ax.legend(loc='upper left', fontsize=12)
@@ -618,7 +715,9 @@ def plot_sample_split_comparison(split_results, filename=None):
     
     if filename:
         plt.savefig(filename, dpi=300)
-        logger.info(f"样本内外测试对比图表已保存至 {filename}")
+        logger.info(f"Sample split comparison chart saved to {filename}")
+        
+    plt.close(fig)  # 关闭图表以释放内存
 
 
 def generate_robustness_report(results, filename):
@@ -629,138 +728,208 @@ def generate_robustness_report(results, filename):
         filename: 保存文件名
     """
     with open(filename, 'w', encoding='utf-8') as f:
-        f.write("==== 波动率风险溢价捕捉系统 - 稳健性测试报告 ====\n")
-        f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        # 使用当前日期生成报告时间
+        report_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        f.write("==== Volatility Risk Premium Capture System - Robustness Test Report ====\n")
+        f.write(f"Generated at: {report_time}\n\n")
         
         # 参数敏感性测试结果
-        f.write("== 1. 参数敏感性测试 ==\n\n")
+        f.write("== 1. Parameter Sensitivity Test ==\n\n")
         
         for param, param_results in results['parameter_sensitivity'].items():
-            f.write(f"-- 参数: {param} --\n")
-            f.write(f"{'参数值':<10} {'动态策略夏普比':<15} {'期限结构策略夏普比':<20} "
-                    f"{'ETF对冲策略夏普比':<20} {'等权组合夏普比':<15}\n")
+            f.write(f"-- Parameter: {param} --\n")
+            f.write(f"{'Value':<10} {'Dynamic Strategy':<15} {'Term Structure':<20} "
+                    f"{'ETF Hedge':<20} {'Equal Weight':<15}\n")
             
             for value, metrics in param_results.items():
-                f.write(f"{value:<10} {metrics['dynamic_sharpe']:<15.2f} "
-                        f"{metrics['ts_sharpe']:<20.2f} "
-                        f"{metrics['etf_sharpe']:<20.2f} "
-                        f"{metrics['equal_sharpe']:<15.2f}\n")
+                # 安全地格式化数值，处理可能的NaN值
+                dynamic_sharpe = metrics['dynamic_sharpe']
+                ts_sharpe = metrics['ts_sharpe']
+                etf_sharpe = metrics['etf_sharpe']
+                equal_sharpe = metrics['equal_sharpe']
+                
+                dynamic_str = f"{dynamic_sharpe:.2f}" if not pd.isna(dynamic_sharpe) else "NA"
+                ts_str = f"{ts_sharpe:.2f}" if not pd.isna(ts_sharpe) else "NA"
+                etf_str = f"{etf_sharpe:.2f}" if not pd.isna(etf_sharpe) else "NA"
+                equal_str = f"{equal_sharpe:.2f}" if not pd.isna(equal_sharpe) else "NA"
+                
+                f.write(f"{value:<10} {dynamic_str:<15} "
+                        f"{ts_str:<20} "
+                        f"{etf_str:<20} "
+                        f"{equal_str:<15}\n")
             
             f.write("\n")
         
         # 替代指标测试结果
-        f.write("== 2. 替代指标测试 ==\n\n")
+        f.write("== 2. Alternative Indicators Test ==\n\n")
         
         if results['alternative_indicators']:
-            f.write(f"{'测试组合':<15} {'描述':<30} {'动态策略夏普比':<15} "
-                    f"{'年化收益(%)':<15} {'最大回撤(%)':<15}\n")
+            f.write(f"{'Test Case':<15} {'Description':<30} {'Dynamic Strategy':<15} "
+                    f"{'Annual Return(%)':<15} {'Max Drawdown(%)':<15}\n")
             
             for name, metrics in results['alternative_indicators'].items():
+                # 安全地格式化数值
+                dynamic_sharpe = metrics['dynamic_sharpe']
+                dynamic_return = metrics['dynamic_return']
+                dynamic_drawdown = metrics['dynamic_drawdown']
+                
+                sharpe_str = f"{dynamic_sharpe:.2f}" if not pd.isna(dynamic_sharpe) else "NA"
+                return_str = f"{dynamic_return:.2f}" if not pd.isna(dynamic_return) else "NA"
+                drawdown_str = f"{abs(dynamic_drawdown):.2f}" if not pd.isna(dynamic_drawdown) else "NA"
+                
                 f.write(f"{name:<15} {metrics['description']:<30} "
-                        f"{metrics['dynamic_sharpe']:<15.2f} "
-                        f"{metrics['dynamic_return']:<15.2f} "
-                        f"{abs(metrics['dynamic_drawdown']):<15.2f}\n")
+                        f"{sharpe_str:<15} "
+                        f"{return_str:<15} "
+                        f"{drawdown_str:<15}\n")
         else:
-            f.write("替代指标测试未完成或失败\n")
+            f.write("Alternative indicators test not completed or failed\n")
         
         f.write("\n")
         
         # 样本内外测试结果
-        f.write("== 3. 样本内外测试 ==\n\n")
+        f.write("== 3. In-Sample/Out-of-Sample Test ==\n\n")
+        
+        # 创建策略名称映射
+        strategy_mapping = {
+            'Term Structure': '期限结构策略',
+            'ETF Hedge': 'ETF对冲策略',
+            'Equal Weight': '等权组合',
+            'Dynamic Strategy': '动态策略选择'
+        }
         
         for split_date, split_result in results['sample_split'].items():
             train_perf = split_result['train']
             test_perf = split_result['test']
             
-            f.write(f"-- 分割日期: {split_date} --\n")
-            f.write("样本内结果:\n")
-            f.write(f"{'指标':<20} {'期限结构策略':<15} {'ETF对冲策略':<15} "
-                    f"{'等权组合':<15} {'动态策略选择':<15}\n")
+            f.write(f"-- Split Date: {split_date} --\n")
+            f.write("In-Sample Results:\n")
+            f.write(f"{'Metric':<20} {'Term Structure':<15} {'ETF Hedge':<15} "
+                    f"{'Equal Weight':<15} {'Dynamic Strategy':<15}\n")
             
             for metric in ['Annual Return(%)', 'Sharpe Ratio', 'Max Drawdown(%)']:
-                f.write(f"{metric:<20} "
-                        f"{train_perf['期限结构策略'][metric]:<15.2f} "
-                        f"{train_perf['ETF对冲策略'][metric]:<15.2f} "
-                        f"{train_perf['等权组合'][metric]:<15.2f} "
-                        f"{train_perf['动态策略选择'][metric]:<15.2f}\n")
+                f.write(f"{metric:<20} ")
+                for strat_en, strat_cn in strategy_mapping.items():
+                    if strat_cn in train_perf and metric in train_perf[strat_cn]:
+                        val = train_perf[strat_cn][metric]
+                        val_str = f"{val:.2f}" if not pd.isna(val) else "NA"
+                        f.write(f"{val_str:<15} ")
+                    else:
+                        f.write(f"{'NA':<15} ")
+                f.write("\n")
             
-            f.write("\n样本外结果:\n")
-            f.write(f"{'指标':<20} {'期限结构策略':<15} {'ETF对冲策略':<15} "
-                    f"{'等权组合':<15} {'动态策略选择':<15}\n")
+            f.write("\nOut-of-Sample Results:\n")
+            f.write(f"{'Metric':<20} {'Term Structure':<15} {'ETF Hedge':<15} "
+                    f"{'Equal Weight':<15} {'Dynamic Strategy':<15}\n")
             
             for metric in ['Annual Return(%)', 'Sharpe Ratio', 'Max Drawdown(%)']:
-                f.write(f"{metric:<20} "
-                        f"{test_perf['期限结构策略'][metric]:<15.2f} "
-                        f"{test_perf['ETF对冲策略'][metric]:<15.2f} "
-                        f"{test_perf['等权组合'][metric]:<15.2f} "
-                        f"{test_perf['动态策略选择'][metric]:<15.2f}\n")
+                f.write(f"{metric:<20} ")
+                for strat_en, strat_cn in strategy_mapping.items():
+                    if strat_cn in test_perf and metric in test_perf[strat_cn]:
+                        val = test_perf[strat_cn][metric]
+                        val_str = f"{val:.2f}" if not pd.isna(val) else "NA"
+                        f.write(f"{val_str:<15} ")
+                    else:
+                        f.write(f"{'NA':<15} ")
+                f.write("\n")
             
             f.write("\n")
         
         # 总结
-        f.write("== 4. 稳健性测试总结 ==\n\n")
+        f.write("== 4. Robustness Test Summary ==\n\n")
         
         # VIX阈值敏感性总结
         if 'VIX_LOW_THRESHOLD' in results['parameter_sensitivity'] and 'VIX_MID_THRESHOLD' in results['parameter_sensitivity']:
             vix_low_range = list(results['parameter_sensitivity']['VIX_LOW_THRESHOLD'].keys())
             vix_low_sharpe = [results['parameter_sensitivity']['VIX_LOW_THRESHOLD'][v]['dynamic_sharpe'] for v in vix_low_range]
-            vix_low_diff = max(vix_low_sharpe) - min(vix_low_sharpe)
+            # 过滤掉NaN值
+            vix_low_sharpe = [s for s in vix_low_sharpe if not pd.isna(s)]
             
             vix_mid_range = list(results['parameter_sensitivity']['VIX_MID_THRESHOLD'].keys())
             vix_mid_sharpe = [results['parameter_sensitivity']['VIX_MID_THRESHOLD'][v]['dynamic_sharpe'] for v in vix_mid_range]
-            vix_mid_diff = max(vix_mid_sharpe) - min(vix_mid_sharpe)
+            # 过滤掉NaN值
+            vix_mid_sharpe = [s for s in vix_mid_sharpe if not pd.isna(s)]
             
-            f.write(f"1. VIX阈值敏感性:\n")
-            f.write(f"   - VIX低阈值 ({min(vix_low_range)}-{max(vix_low_range)}) 夏普比率变化: {vix_low_diff:.2f} "
-                    f"(最低: {min(vix_low_sharpe):.2f}, 最高: {max(vix_low_sharpe):.2f})\n")
-            f.write(f"   - VIX中阈值 ({min(vix_mid_range)}-{max(vix_mid_range)}) 夏普比率变化: {vix_mid_diff:.2f} "
-                    f"(最低: {min(vix_mid_sharpe):.2f}, 最高: {max(vix_mid_sharpe):.2f})\n")
+            f.write(f"1. VIX Threshold Sensitivity:\n")
             
-            if vix_low_diff < 0.3 and vix_mid_diff < 0.3:
-                f.write("   结论: 策略对VIX阈值变化不敏感, 表现稳健\n\n")
+            if vix_low_sharpe:  # 确保有有效数据
+                vix_low_diff = max(vix_low_sharpe) - min(vix_low_sharpe)
+                f.write(f"   - VIX Low Threshold ({min(vix_low_range)}-{max(vix_low_range)}) Sharpe Ratio change: {vix_low_diff:.2f} "
+                        f"(Min: {min(vix_low_sharpe):.2f}, Max: {max(vix_low_sharpe):.2f})\n")
             else:
-                f.write("   结论: 策略对VIX阈值变化较敏感, 建议优化\n\n")
+                f.write(f"   - VIX Low Threshold: Not enough valid data for analysis\n")
+            
+            if vix_mid_sharpe:  # 确保有有效数据
+                vix_mid_diff = max(vix_mid_sharpe) - min(vix_mid_sharpe)
+                f.write(f"   - VIX Mid Threshold ({min(vix_mid_range)}-{max(vix_mid_range)}) Sharpe Ratio change: {vix_mid_diff:.2f} "
+                        f"(Min: {min(vix_mid_sharpe):.2f}, Max: {max(vix_mid_sharpe):.2f})\n")
+            else:
+                f.write(f"   - VIX Mid Threshold: Not enough valid data for analysis\n")
+            
+            if vix_low_sharpe and vix_mid_sharpe:
+                vix_low_diff = max(vix_low_sharpe) - min(vix_low_sharpe)
+                vix_mid_diff = max(vix_mid_sharpe) - min(vix_mid_sharpe)
+                if vix_low_diff < 0.3 and vix_mid_diff < 0.3:
+                    f.write("   Conclusion: Strategy not sensitive to VIX threshold changes, showing robust performance\n\n")
+                else:
+                    f.write("   Conclusion: Strategy relatively sensitive to VIX thresholds, optimization recommended\n\n")
+            else:
+                f.write("   Conclusion: Insufficient data for VIX threshold sensitivity analysis\n\n")
         
         # 平滑窗口敏感性总结
         if 'SMOOTH_WINDOW' in results['parameter_sensitivity']:
             smooth_range = list(results['parameter_sensitivity']['SMOOTH_WINDOW'].keys())
             smooth_sharpe = [results['parameter_sensitivity']['SMOOTH_WINDOW'][v]['dynamic_sharpe'] for v in smooth_range]
-            smooth_diff = max(smooth_sharpe) - min(smooth_sharpe)
+            # 过滤掉NaN值
+            smooth_sharpe = [s for s in smooth_sharpe if not pd.isna(s)]
             
-            f.write(f"2. 状态平滑窗口敏感性:\n")
-            f.write(f"   - 窗口范围 ({min(smooth_range)}-{max(smooth_range)}) 夏普比率变化: {smooth_diff:.2f} "
-                    f"(最低: {min(smooth_sharpe):.2f}, 最高: {max(smooth_sharpe):.2f})\n")
+            f.write(f"2. State Smoothing Window Sensitivity:\n")
             
-            if smooth_diff < 0.3:
-                f.write("   结论: 策略对状态平滑窗口不敏感, 表现稳健\n\n")
+            if smooth_sharpe:  # 确保有有效数据
+                smooth_diff = max(smooth_sharpe) - min(smooth_sharpe)
+                f.write(f"   - Window range ({min(smooth_range)}-{max(smooth_range)}) Sharpe Ratio change: {smooth_diff:.2f} "
+                        f"(Min: {min(smooth_sharpe):.2f}, Max: {max(smooth_sharpe):.2f})\n")
+                
+                if smooth_diff < 0.3:
+                    f.write("   Conclusion: Strategy not sensitive to state smoothing window, showing robust performance\n\n")
+                else:
+                    f.write("   Conclusion: Strategy relatively sensitive to smoothing window, optimization recommended\n\n")
             else:
-                f.write("   结论: 策略对状态平滑窗口较敏感, 建议优化\n\n")
+                f.write("   - Window range: Not enough valid data for analysis\n")
+                f.write("   Conclusion: Insufficient data for smoothing window sensitivity analysis\n\n")
         
         # 替代指标测试总结
         if results['alternative_indicators']:
-            baseline_sharpe = results['alternative_indicators'].get('baseline', {}).get('dynamic_sharpe')
+            baseline = results['alternative_indicators'].get('baseline', {})
+            baseline_sharpe = baseline.get('dynamic_sharpe', np.nan)
             
-            if baseline_sharpe:
+            if not pd.isna(baseline_sharpe):
                 alt_results = []
                 
                 for name, metrics in results['alternative_indicators'].items():
                     if name != 'baseline':
-                        sharpe_diff = metrics['dynamic_sharpe'] - baseline_sharpe
-                        alt_results.append((name, metrics['description'], metrics['dynamic_sharpe'], sharpe_diff))
+                        dynamic_sharpe = metrics.get('dynamic_sharpe', np.nan)
+                        if not pd.isna(dynamic_sharpe):
+                            sharpe_diff = dynamic_sharpe - baseline_sharpe
+                            alt_results.append((name, metrics['description'], dynamic_sharpe, sharpe_diff))
                 
-                f.write(f"3. 替代指标测试总结:\n")
-                f.write(f"   - 基准测试 (VIX + 50日均线) 夏普比率: {baseline_sharpe:.2f}\n")
+                f.write(f"3. Alternative Indicators Test Summary:\n")
+                f.write(f"   - Baseline (VIX + 50-day MA) Sharpe Ratio: {baseline_sharpe:.2f}\n")
                 
                 for name, desc, sharpe, diff in alt_results:
-                    f.write(f"   - {desc}: 夏普比率 {sharpe:.2f} (变化: {diff:+.2f})\n")
+                    f.write(f"   - {desc}: Sharpe Ratio {sharpe:.2f} (Change: {diff:+.2f})\n")
                 
                 # 计算平均性能变化
-                avg_diff = sum(r[3] for r in alt_results) / len(alt_results) if alt_results else 0
-                
-                if avg_diff > -0.2:
-                    f.write("   结论: 策略在替代指标下仍保持良好表现, 框架稳健\n\n")
+                if alt_results:
+                    avg_diff = sum(r[3] for r in alt_results) / len(alt_results)
+                    
+                    if avg_diff > -0.2:
+                        f.write("   Conclusion: Strategy maintains good performance with alternative indicators, framework is robust\n\n")
+                    else:
+                        f.write("   Conclusion: Strategy sensitive to indicator selection, further study recommended\n\n")
                 else:
-                    f.write("   结论: 策略对指标选择较敏感, 建议进一步研究指标组合\n\n")
+                    f.write("   Conclusion: Insufficient alternative indicator data for analysis\n\n")
+            else:
+                f.write("3. Alternative Indicators Test Summary: Baseline results not available\n\n")
         
         # 样本内外测试总结
         if results['sample_split']:
@@ -768,25 +937,33 @@ def generate_robustness_report(results, filename):
             out_sample_sharpe = []
             
             for split_date, split_result in results['sample_split'].items():
-                in_sample_sharpe.append(split_result['train']['动态策略选择']['Sharpe Ratio'])
-                out_sample_sharpe.append(split_result['test']['动态策略选择']['Sharpe Ratio'])
+                if '动态策略选择' in split_result['train'] and '动态策略选择' in split_result['test']:
+                    in_sharpe = split_result['train']['动态策略选择'].get('Sharpe Ratio', np.nan)
+                    out_sharpe = split_result['test']['动态策略选择'].get('Sharpe Ratio', np.nan)
+                    
+                    if not pd.isna(in_sharpe) and not pd.isna(out_sharpe):
+                        in_sample_sharpe.append(in_sharpe)
+                        out_sample_sharpe.append(out_sharpe)
             
-            avg_in_sample = sum(in_sample_sharpe) / len(in_sample_sharpe) if in_sample_sharpe else 0
-            avg_out_sample = sum(out_sample_sharpe) / len(out_sample_sharpe) if out_sample_sharpe else 0
-            sharpe_diff = avg_out_sample - avg_in_sample
-            
-            f.write(f"4. 样本内外测试总结:\n")
-            f.write(f"   - 平均样本内夏普比率: {avg_in_sample:.2f}\n")
-            f.write(f"   - 平均样本外夏普比率: {avg_out_sample:.2f}\n")
-            f.write(f"   - 样本内外差异: {sharpe_diff:+.2f}\n")
-            
-            if sharpe_diff > -0.3:
-                f.write("   结论: 策略在样本外测试中保持稳定表现, 未出现明显过拟合\n\n")
+            if in_sample_sharpe and out_sample_sharpe:  # 确保有有效数据
+                avg_in_sample = sum(in_sample_sharpe) / len(in_sample_sharpe)
+                avg_out_sample = sum(out_sample_sharpe) / len(out_sample_sharpe)
+                sharpe_diff = avg_out_sample - avg_in_sample
+                
+                f.write(f"4. In-Sample/Out-of-Sample Test Summary:\n")
+                f.write(f"   - Average In-Sample Sharpe Ratio: {avg_in_sample:.2f}\n")
+                f.write(f"   - Average Out-of-Sample Sharpe Ratio: {avg_out_sample:.2f}\n")
+                f.write(f"   - In/Out-of-Sample Difference: {sharpe_diff:+.2f}\n")
+                
+                if sharpe_diff > -0.3:
+                    f.write("   Conclusion: Strategy maintains stable performance in out-of-sample tests, no significant overfitting\n\n")
+                else:
+                    f.write("   Conclusion: Strategy performance declines in out-of-sample tests, possible overfitting, optimization recommended\n\n")
             else:
-                f.write("   结论: 策略在样本外测试中表现下滑, 可能存在过拟合, 建议优化\n\n")
+                f.write("4. In-Sample/Out-of-Sample Test Summary: Insufficient data for analysis\n\n")
         
         # 最终总结
-        f.write("== 最终结论 ==\n\n")
+        f.write("== Final Conclusion ==\n\n")
         
         # 基于之前结果计算稳健性综合评分
         robustness_score = 0
@@ -794,22 +971,25 @@ def generate_robustness_report(results, filename):
         
         # VIX阈值敏感性评分
         if 'VIX_LOW_THRESHOLD' in results['parameter_sensitivity'] and 'VIX_MID_THRESHOLD' in results['parameter_sensitivity']:
-            vix_low_diff = max(vix_low_sharpe) - min(vix_low_sharpe)
-            vix_mid_diff = max(vix_mid_sharpe) - min(vix_mid_sharpe)
-            
-            if vix_low_diff < 0.2 and vix_mid_diff < 0.2:
-                robustness_score += 5
-            elif vix_low_diff < 0.3 and vix_mid_diff < 0.3:
-                robustness_score += 4
-            elif vix_low_diff < 0.4 and vix_mid_diff < 0.4:
-                robustness_score += 3
-            else:
-                robustness_score += 2
+            if vix_low_sharpe and vix_mid_sharpe:
+                vix_low_diff = max(vix_low_sharpe) - min(vix_low_sharpe)
+                vix_mid_diff = max(vix_mid_sharpe) - min(vix_mid_sharpe)
                 
-            factor_count += 1
+                if vix_low_diff < 0.2 and vix_mid_diff < 0.2:
+                    robustness_score += 5
+                elif vix_low_diff < 0.3 and vix_mid_diff < 0.3:
+                    robustness_score += 4
+                elif vix_low_diff < 0.4 and vix_mid_diff < 0.4:
+                    robustness_score += 3
+                else:
+                    robustness_score += 2
+                    
+                factor_count += 1
         
         # 平滑窗口敏感性评分
-        if 'SMOOTH_WINDOW' in results['parameter_sensitivity']:
+        if 'SMOOTH_WINDOW' in results['parameter_sensitivity'] and smooth_sharpe:
+            smooth_diff = max(smooth_sharpe) - min(smooth_sharpe)
+            
             if smooth_diff < 0.2:
                 robustness_score += 5
             elif smooth_diff < 0.3:
@@ -822,7 +1002,7 @@ def generate_robustness_report(results, filename):
             factor_count += 1
         
         # 替代指标测试评分
-        if results['alternative_indicators']:
+        if results['alternative_indicators'] and alt_results:
             if avg_diff > -0.1:
                 robustness_score += 5
             elif avg_diff > -0.2:
@@ -835,7 +1015,7 @@ def generate_robustness_report(results, filename):
             factor_count += 1
         
         # 样本内外测试评分
-        if results['sample_split']:
+        if results['sample_split'] and in_sample_sharpe and out_sample_sharpe:
             if sharpe_diff > 0:
                 robustness_score += 5
             elif sharpe_diff > -0.2:
@@ -851,22 +1031,22 @@ def generate_robustness_report(results, filename):
         final_score = robustness_score / factor_count if factor_count > 0 else 0
         
         # 输出综合评价
-        f.write(f"稳健性综合评分: {final_score:.1f}/5.0\n\n")
+        f.write(f"Robustness Overall Rating: {final_score:.1f}/5.0\n\n")
         
         if final_score >= 4.5:
-            f.write("综合评价: 策略展现出极高的稳健性, 对参数设置和指标选择不敏感, 在样本外数据中表现优异。\n"
-                    "推荐: 该策略框架适合在实际环境中应用, 无需重大调整。\n")
+            f.write("Overall Assessment: The strategy demonstrates extremely high robustness, insensitive to parameter settings and indicator selection, with excellent performance in out-of-sample data.\n"
+                    "Recommendation: The strategy framework is suitable for application in real environments without major adjustments.\n")
         elif final_score >= 4.0:
-            f.write("综合评价: 策略展现出高度稳健性, 对大多数测试因素表现稳定, 仅有少量敏感点。\n"
-                    "推荐: 可以应用于实际环境, 但建议对识别出的敏感点进行优化。\n")
+            f.write("Overall Assessment: The strategy demonstrates high robustness, stable performance for most test factors, with only a few sensitivity points.\n"
+                    "Recommendation: Can be applied to real environments, but optimization of identified sensitivity points is recommended.\n")
         elif final_score >= 3.5:
-            f.write("综合评价: 策略展现出良好稳健性, 大部分测试条件下保持稳定, 但存在一些敏感区域。\n"
-                    "推荐: 应用前建议优化识别出的敏感参数, 并增强风险管理机制。\n")
+            f.write("Overall Assessment: The strategy demonstrates good robustness, maintains stability under most test conditions, but there are some sensitive areas.\n"
+                    "Recommendation: Before application, optimize the identified sensitive parameters and enhance risk management mechanisms.\n")
         elif final_score >= 3.0:
-            f.write("综合评价: 策略稳健性一般, 对某些参数和条件较为敏感, 但整体框架有效。\n"
-                    "推荐: 需要进一步优化参数设置和指标选择, 在应用前进行更全面的样本外测试。\n")
+            f.write("Overall Assessment: The strategy shows moderate robustness, somewhat sensitive to certain parameters and conditions, but the overall framework is effective.\n"
+                    "Recommendation: Further optimization of parameter settings and indicator selection is needed, with more comprehensive out-of-sample testing before application.\n")
         else:
-            f.write("综合评价: 策略稳健性较弱, 对多个测试因素表现敏感, 可能存在过拟合风险。\n"
-                    "推荐: 需要重新评估策略设计, 考虑简化模型或采用更稳健的状态分类方法。\n")
+            f.write("Overall Assessment: The strategy shows weak robustness, sensitive to multiple test factors, with potential overfitting risk.\n"
+                    "Recommendation: Re-evaluate strategy design, consider simplifying the model or adopting more robust state classification methods.\n")
             
-    logger.info(f"稳健性测试报告已生成: {filename}")
+    logger.info(f"Robustness test report generated: {filename}")
