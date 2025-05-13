@@ -6,12 +6,22 @@ import numpy as np
 import pandas as pd
 import config
 
-def term_structure_strategy(df):
-    """波动率期限结构交易策略"""
+def term_structure_strategy(df, custom_config=None):
+    """波动率期限结构交易策略
+    
+    Args:
+        df: 包含市场数据的DataFrame
+        custom_config: 自定义配置对象 (用于稳健性测试)
+        
+    Returns:
+        DataFrame: 添加了策略信号和收益的DataFrame
+    """
+    cfg = custom_config if custom_config is not None else config
+    
     df['ts_signal'] = 0
     
-    long_condition = (df['term_structure'] < config.TS_LOW_THRESHOLD) & (df['vix_change'] > 1)
-    short_condition = (df['term_structure'] > config.TS_HIGH_THRESHOLD) & (df['vix_change'] < -1)
+    long_condition = (df['term_structure'] < cfg.TS_LOW_THRESHOLD) & (df['vix_change'] > 1)
+    short_condition = (df['term_structure'] > cfg.TS_HIGH_THRESHOLD) & (df['vix_change'] < -1)
     
     df.loc[long_condition, 'ts_signal'] = 1
     df.loc[short_condition, 'ts_signal'] = -1
@@ -19,25 +29,35 @@ def term_structure_strategy(df):
     df['ts_signal'] = df['ts_signal'].replace(0, np.nan).ffill().fillna(0)
     
     df['vix_futures_vol'] = df['vix_futures_f1'].pct_change().rolling(window=20).std() * np.sqrt(252)
-    df['ts_position_size'] = config.TARGET_VOL / df['vix_futures_vol'].clip(lower=0.01)
-    df['ts_position_size'] = df['ts_position_size'].clip(lower=0.5, upper=config.MAX_LEVERAGE)
+    df['ts_position_size'] = cfg.TARGET_VOL / df['vix_futures_vol'].clip(lower=0.01)
+    df['ts_position_size'] = df['ts_position_size'].clip(lower=0.5, upper=cfg.MAX_LEVERAGE)
     df['ts_position'] = df['ts_signal'] * df['ts_position_size']
     df['ts_returns'] = df['ts_position'].shift(1) * df['vix_futures_f1'].pct_change()
     
-    calculate_trading_costs(df, 'ts_signal', 'ts_returns', config.FUTURES_COST + config.SLIPPAGE, 0)
+    calculate_trading_costs(df, 'ts_signal', 'ts_returns', cfg.FUTURES_COST + cfg.SLIPPAGE, 0, cfg)
     
     return df
 
-def etf_hedge_strategy(df):
-    """波动率 ETF 对冲策略"""
+def etf_hedge_strategy(df, custom_config=None):
+    """波动率 ETF 对冲策略
+    
+    Args:
+        df: 包含市场数据的DataFrame
+        custom_config: 自定义配置对象 (用于稳健性测试)
+        
+    Returns:
+        DataFrame: 添加了策略信号和收益的DataFrame
+    """
+    cfg = custom_config if custom_config is not None else config
+    
     df['etf_signal'] = 0
     short_condition = (df['vix'] < 20) & (df['term_structure'] < 1)
     df.loc[short_condition, 'etf_signal'] = -1
 
     df['etf_signal'] = df['etf_signal'].replace(0, np.nan).ffill().fillna(0)
     
-    vix_spike1 = df['vix_change'] > config.VIX_SPIKE_THRESHOLD_1
-    vix_spike2 = df['vix_change'] > config.VIX_SPIKE_THRESHOLD_2
+    vix_spike1 = df['vix_change'] > cfg.VIX_SPIKE_THRESHOLD_1
+    vix_spike2 = df['vix_change'] > cfg.VIX_SPIKE_THRESHOLD_2
     
     current_signal = df['etf_signal'].copy().astype(float)
     for i in range(1, len(df)):
@@ -54,11 +74,11 @@ def etf_hedge_strategy(df):
     df['etf_position'] = df['etf_signal'] * df['hedge_ratio']
     df['etf_returns'] = df['etf_position'].shift(1) * df['vxx'].pct_change()
     
-    calculate_trading_costs(df, 'etf_signal', 'etf_returns', config.ETF_COST + config.SLIPPAGE, config.SHORT_COST)
+    calculate_trading_costs(df, 'etf_signal', 'etf_returns', cfg.ETF_COST + cfg.SLIPPAGE, cfg.SHORT_COST, cfg)
     
     return df
 
-def calculate_trading_costs(df, signal_col, returns_col, trade_cost, short_cost=0):
+def calculate_trading_costs(df, signal_col, returns_col, trade_cost, short_cost=0, custom_config=None):
     """计算交易成本和做空成本
     
     Args:
@@ -67,6 +87,7 @@ def calculate_trading_costs(df, signal_col, returns_col, trade_cost, short_cost=
         returns_col: 收益列名
         trade_cost: 交易成本率
         short_cost: 做空成本率（日化）
+        custom_config: 自定义配置对象 (用于稳健性测试)
     """
     # 计算交易成本（只在开仓和平仓时产生）
     df[f'{signal_col}_change'] = df[signal_col].diff().abs()

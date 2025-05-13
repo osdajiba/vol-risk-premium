@@ -80,3 +80,31 @@ DEFAULT_DATA_FILES = {
 
 # 默认合并数据文件
 DEFAULT_COMBINED_DATA = 'data/combined_market_data.csv'  # 默认合并数据文件
+
+# 稳健性测试配置 - 新增部分
+RUN_ROBUSTNESS = True     # 默认启动稳健性测试
+
+# 参数敏感性测试配置
+ROBUSTNESS_PARAMS = {
+    'VIX_LOW_THRESHOLD': [12, 14, 15, 17, 19],    # VIX低阈值测试范围
+    'VIX_MID_THRESHOLD': [22, 24, 25, 27, 29],    # VIX中阈值测试范围
+    'SMOOTH_WINDOW': [1, 2, 3, 5, 7],            # 平滑窗口测试范围
+    'TS_LOW_THRESHOLD': [0.95, 0.96, 0.97, 0.98, 0.99],  # 期限结构低阈值测试范围
+    'TS_HIGH_THRESHOLD': [1.01, 1.02, 1.03, 1.04, 1.05],  # 期限结构高阈值测试范围
+    'TREND_STRENGTH': [0.01, 0.015, 0.02, 0.025, 0.03]    # 趋势强度测试范围
+}
+
+# 替代指标测试配置
+USE_ALTERNATIVE_INDICATORS = True    # 是否进行替代指标测试
+ALT_INDICATORS = {
+    'use_skew': True,      # 是否测试使用SKEW替代VIX
+    'ma_windows': [50, 200]  # 测试的移动平均窗口
+}
+
+# 样本内外测试配置
+SAMPLE_SPLIT_DATES = ['2018-01-01', '2019-01-01', '2020-01-01', '2021-01-01']  # 样本分割日期
+
+# 稳健性测试输出配置
+ROBUSTNESS_DIR = 'robustness'    # 稳健性测试结果子目录
+SAVE_DETAILED_RESULTS = True     # 是否保存详细的测试结果
+ROBUSTNESS_REPORT_FILE = 'robustness_report.txt'  # 稳健性测试报告文件名

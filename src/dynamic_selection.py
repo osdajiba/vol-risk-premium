@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import config
 
-def dynamic_strategy_selection(df):
+def dynamic_strategy_selection(df, custom_config=None):
     """基于市场状态实现动态策略选择
     
     根据市场状态为期限结构策略和ETF对冲策略分配权重，
@@ -14,16 +14,19 @@ def dynamic_strategy_selection(df):
     
     Args:
         df: 包含市场状态和单一策略收益的DataFrame
+        custom_config: 自定义配置对象 (用于稳健性测试)
         
     Returns:
         DataFrame: 添加了动态策略权重和组合收益的DataFrame
     """
+    cfg = custom_config if custom_config is not None else config
+    
     # 初始化权重为等权
     df['ts_weight'] = 0.5
     df['etf_weight'] = 0.5
     
     # 根据市场状态分配目标权重
-    for state, (ts_w, etf_w) in config.STATE_WEIGHTS.items():
+    for state, (ts_w, etf_w) in cfg.STATE_WEIGHTS.items():
         mask = (df['market_state_smooth'] == state)
         df.loc[mask, 'ts_target_weight'] = ts_w
         df.loc[mask, 'etf_target_weight'] = etf_w
@@ -35,8 +38,8 @@ def dynamic_strategy_selection(df):
     # 递归调整权重
     for i in range(1, len(df)):
         ts_diff = df['ts_target_weight'].iloc[i] - ts_weight.iloc[i-1]    # 计算目标权重和当前权重的差距, 限制每日调整幅度
-        if abs(ts_diff) > config.MAX_DAILY_WEIGHT_CHANGE:
-            ts_diff = np.sign(ts_diff) * config.MAX_DAILY_WEIGHT_CHANGE
+        if abs(ts_diff) > cfg.MAX_DAILY_WEIGHT_CHANGE:
+            ts_diff = np.sign(ts_diff) * cfg.MAX_DAILY_WEIGHT_CHANGE
 
         ts_weight.iloc[i] = ts_weight.iloc[i-1] + ts_diff
         etf_weight.iloc[i] = 1 - ts_weight.iloc[i]  # 确保权重和为1

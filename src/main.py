@@ -24,6 +24,7 @@ from strategies import *
 from dynamic_selection import *
 from performance import *
 from visualization import *
+from tests import comprehensive_robustness_test
 
 
 def setup_logging():
@@ -287,6 +288,8 @@ def parse_args():
                         help='强制重新下载数据')
     parser.add_argument('--local_file', type=str, default=None,
                         help='使用本地数据文件路径')
+    parser.add_argument('--run_robustness', action='store_true',
+                        help='运行稳健性测试')
     return parser.parse_args()
 
 
@@ -307,6 +310,48 @@ def main():
         local_file=args.local_file,
         logger=logger
     )
+    
+    if args.run_robustness or (hasattr(config, 'RUN_ROBUSTNESS') and config.RUN_ROBUSTNESS):
+        logger.info("开始运行稳健性测试...")
+        
+        try:
+            robustness_output_dir = args.output_dir
+            if hasattr(config, 'ROBUSTNESS_DIR'):
+                robustness_output_dir = os.path.join(robustness_output_dir, config.ROBUSTNESS_DIR)
+            
+            robustness_results = comprehensive_robustness_test(
+                start_date=args.start_date,
+                end_date=args.end_date,
+                output_dir=args.output_dir,
+                local_file=args.local_file
+            )
+            
+            logger.info("稳健性测试完成")
+            
+            print("\n==== 稳健性测试摘要 ====")
+            if robustness_results and 'parameter_sensitivity' in robustness_results:
+                for param, results in robustness_results['parameter_sensitivity'].items():
+                    print(f"\n参数 {param} 敏感性:")
+                    values = list(results.keys())
+                    sharpe_values = [results[v]['dynamic_sharpe'] for v in values]
+                    best_value = values[sharpe_values.index(max(sharpe_values))]
+                    print(f"最佳值: {best_value} (夏普比率: {max(sharpe_values):.2f})")
+                    print(f"变化范围: {min(sharpe_values):.2f} - {max(sharpe_values):.2f}")
+            
+            if robustness_results and 'alternative_indicators' in robustness_results:
+                print("\n替代指标测试:")
+                for name, metrics in robustness_results['alternative_indicators'].items():
+                    print(f"{metrics['description']}: 夏普比率 = {metrics['dynamic_sharpe']:.2f}")
+                
+            report_path = os.path.join(args.output_dir, 'robustness', 
+                                      getattr(config, 'ROBUSTNESS_REPORT_FILE', 'robustness_report.txt'))
+            print(f"\n详细的稳健性测试报告已生成，请查看: {report_path}")
+            
+        except ImportError:
+            logger.error("无法导入稳健性测试模块，请确保 robustness.py 文件存在")
+        except Exception as e:
+            logger.error(f"运行稳健性测试时发生错误: {str(e)}")
+            logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

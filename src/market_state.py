@@ -11,21 +11,22 @@ import logging
 logger = logging.getLogger('market_state')
 
 
-def classify_market_states(df):
+def classify_market_states(df, custom_config=None):
     """根据VIX水平、市场趋势和期限结构识别市场状态
     
     Args:
         df: 包含市场数据的DataFrame
+        custom_config: 自定义配置对象 (用于稳健性测试)
         
     Returns:
         DataFrame: 添加了市场状态分类的DataFrame
     """
-    # 检查DataFrame是否为空
+    cfg = custom_config if custom_config is not None else config
+    
     if df.empty:
         logger.warning("输入的DataFrame为空，无法进行市场状态分类")
         return df
     
-    # 检查是否包含必要的列
     required_columns = ['vix', 'spx_trend', 'term_structure']
     for col in required_columns:
         if col not in df.columns:
@@ -35,45 +36,44 @@ def classify_market_states(df):
             df['market_state_smooth'] = np.nan
             return df
     
-    # 使用向量化操作分类市场状态
     conditions = [
         # 状态1：平静上涨 - 低VIX，上升趋势，正向期限结构
-        (df['vix'] < config.VIX_LOW_THRESHOLD) & 
+        (df['vix'] < cfg.VIX_LOW_THRESHOLD) & 
         (df['spx_trend'] == 1) & 
         (df['term_structure'] < 1),
         
         # 状态2：平静整理 - 低/中VIX，横盘趋势，正向期限结构
-        (df['vix'] < config.VIX_MID_THRESHOLD) & 
+        (df['vix'] < cfg.VIX_MID_THRESHOLD) & 
         (df['spx_trend'] == 0) & 
         (df['term_structure'] < 1),
         
         # 状态3：轻微压力 - 中等VIX，下跌趋势，正向/平坦期限结构
-        (df['vix'] >= config.VIX_LOW_THRESHOLD) & 
-        (df['vix'] < config.VIX_MID_THRESHOLD) & 
+        (df['vix'] >= cfg.VIX_LOW_THRESHOLD) & 
+        (df['vix'] < cfg.VIX_MID_THRESHOLD) & 
         (df['spx_trend'] == -1) & 
-        (df['term_structure'] <= config.TS_HIGH_THRESHOLD),
+        (df['term_structure'] <= cfg.TS_HIGH_THRESHOLD),
         
         # 状态4：明显压力 - 中/高VIX，下跌趋势，平坦期限结构
-        ((df['vix'] >= config.VIX_MID_THRESHOLD) | 
+        ((df['vix'] >= cfg.VIX_MID_THRESHOLD) | 
          (df['spx_trend'] == -1)) & 
-        (df['term_structure'] >= config.TS_LOW_THRESHOLD) & 
-        (df['term_structure'] <= config.TS_HIGH_THRESHOLD),
+        (df['term_structure'] >= cfg.TS_LOW_THRESHOLD) & 
+        (df['term_structure'] <= cfg.TS_HIGH_THRESHOLD),
         
         # 状态5：恐慌 - 高VIX，急跌趋势，反向期限结构
-        (df['vix'] > config.VIX_MID_THRESHOLD) & 
+        (df['vix'] > cfg.VIX_MID_THRESHOLD) & 
         (df['spx_trend'] == -1) & 
         (df['term_structure'] > 1),
         
         # 状态6：恢复 - 高/中VIX，反弹趋势，反向/平坦期限结构
-        (df['vix'] > config.VIX_LOW_THRESHOLD) & 
+        (df['vix'] > cfg.VIX_LOW_THRESHOLD) & 
         (df['spx_trend'] == 1) & 
-        (df['term_structure'] >= config.TS_LOW_THRESHOLD)
+        (df['term_structure'] >= cfg.TS_LOW_THRESHOLD)
     ]
     
     states = [1, 2, 3, 4, 5, 6]
     
     df['market_state'] = np.select(conditions, states, default=3)    # 使用np.select进行向量化分类
-    df['market_state_smooth'] = smooth_market_state(df['market_state'], window=config.SMOOTH_WINDOW)    # 应用状态平滑处理
+    df['market_state_smooth'] = smooth_market_state(df['market_state'], window=cfg.SMOOTH_WINDOW)    # 应用状态平滑处理
     
     return df
 
